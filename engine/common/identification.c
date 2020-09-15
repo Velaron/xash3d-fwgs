@@ -29,7 +29,7 @@ should be enough to determine if device exist in identifier
 
 ==========================================================
 */
-typedef integer64 bloomfilter_t;
+typedef uint64_t bloomfilter_t;
 
 static bloomfilter_t id;
 
@@ -48,7 +48,7 @@ bloomfilter_t BloomFilter_Process( const char *buffer, int size )
 
 	while( crc32 )
 	{
-		value |= ((integer64)1) << ( crc32 & bf64_mask );
+		value |= ((uint64_t)1) << ( crc32 & bf64_mask );
 		crc32 = crc32 >> 6;
 	}
 
@@ -640,7 +640,7 @@ void ID_Init( void )
 #else
 	{
 		const char *home = getenv( "HOME" );
-		if( home )
+		if( COM_CheckString( home ) )
 		{
 			FILE *cfg = fopen( va( "%s/.config/.xash_id", home ), "r" );
 			if( !cfg )
@@ -690,7 +690,7 @@ void ID_Init( void )
 #else
 	{
 		const char *home = getenv( "HOME" );
-		if( home )
+		if( COM_CheckString( home ) )
 		{
 			FILE *cfg = fopen( va( "%s/.config/.xash_id", home ), "w" );
 			if( !cfg )

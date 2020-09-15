@@ -20,8 +20,7 @@ GNU General Public License for more details.
 #include "platform/android/android_priv.h"
 #include "errno.h"
 #include <pthread.h>
-#include <android/native_window.h>
-#include <android/native_window_jni.h>
+#include <sys/prctl.h>
 
 #ifndef JNICALL
 #define JNICALL // a1ba: workaround for my IDE, where Java files are not included
@@ -89,7 +88,6 @@ typedef enum event_type
 	event_ondestroy,
 	event_onresume,
 	event_onfocuschange,
-	event_setwindow,
 } eventtype_t;
 
 typedef struct touchevent_s
@@ -142,7 +140,6 @@ typedef struct event_s
 		joyaxis_t axis;
 		joybutton_t button;
 		keyevent_t key;
-		ANativeWindow *window;
 	};
 } event_t;
 
@@ -163,7 +160,6 @@ static struct {
 } events = { PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER };
 
 struct jnimethods_s jni;
-struct nativeegl_s  negl;
 struct jnimouse_s   jnimouse;
 
 #define Android_Lock() pthread_mutex_lock(&events.mutex);
@@ -265,6 +261,7 @@ DECLARE_JNI_INTERFACE( int, nativeInit, jobject array )
 	jni.getGLAttribute = (*env)->GetStaticMethodID(env, jni.actcls, "getGLAttribute", "(I)I");
 	jni.deleteGLContext = (*env)->GetStaticMethodID(env, jni.actcls, "deleteGLContext", "()Z");
 	jni.getSelectedPixelFormat = (*env)->GetStaticMethodID(env, jni.actcls, "getSelectedPixelFormat", "()I");
+	jni.getSurface = (*env)->GetStaticMethodID(env, jni.actcls, "getNativeSurface", "()Landroid/view/Surface;");
 
 	/* Run the application. */
 
@@ -337,7 +334,16 @@ DECLARE_JNI_INTERFACE( void, nativeKey, jint down, jint code )
 	else
 	{
 		if( code >= ( sizeof( s_android_scantokey ) / sizeof( s_android_scantokey[0] ) ) )
+		{
+			Con_DPrintf( "nativeKey: unknown Android key %d\n", code );
 			return;
+		}
+
+		if( !s_android_scantokey[code] )
+		{
+			Con_DPrintf( "nativeKey: unmapped Android key %d\n", code );
+			return;
+		}
 
 		event = Android_AllocEvent();
 		event->type = down?event_key_down:event_key_up;
@@ -559,24 +565,6 @@ DECLARE_JNI_INTERFACE( int, nativeTestWritePermission, jstring jPath )
 	(*env)->ReleaseStringUTFChars( env, jPath, path );
 
 	return ret;
-}
-
-DECLARE_JNI_INTERFACE( void, nativeSetSurface, jobject surface )
-{
-	Android_Lock();
-	if( surface )
-	{
-		negl.window = ANativeWindow_fromSurface( env, surface );
-	}
-	else
-	{
-		if( negl.window )
-		{
-			ANativeWindow_release( negl.window );
-			negl.window = NULL;
-		}
-	}
-	Android_Unlock();
 }
 
 JNIEXPORT jint JNICALL JNI_OnLoad( JavaVM *vm, void *reserved )
@@ -854,10 +842,10 @@ void Platform_RunEvents( void )
 			// destroy EGL surface when hiding application
 			if( !events.queue[i].arg )
 			{
-				host.status = HOST_FRAME;
 				SNDDMA_Activate( true );
-				(*jni.env)->CallStaticVoidMethod( jni.env, jni.actcls, jni.toggleEGL, 1 );
-				Android_UpdateSurface();
+//				(*jni.env)->CallStaticVoidMethod( jni.env, jni.actcls, jni.toggleEGL, 1 );
+				Android_UpdateSurface( true );
+				host.status = HOST_FRAME;
 				SetBits( gl_vsync->flags, FCVAR_CHANGED ); // set swap interval
 				host.force_draw_version = true;
 				host.force_draw_version_time = host.realtime + FORCE_DRAW_VERSION_TIME;
@@ -865,10 +853,10 @@ void Platform_RunEvents( void )
 
 			if( events.queue[i].arg )
 			{
-				host.status = HOST_NOFOCUS;
 				SNDDMA_Activate( false );
-				(*jni.env)->CallStaticVoidMethod( jni.env, jni.actcls, jni.toggleEGL, 0 );
-				negl.valid = false;
+				Android_UpdateSurface( false );
+				host.status = HOST_NOFOCUS;
+//				(*jni.env)->CallStaticVoidMethod( jni.env, jni.actcls, jni.toggleEGL, 0 );
 			}
 			break;
 
@@ -876,9 +864,9 @@ void Platform_RunEvents( void )
 			// reinitialize EGL and change engine screen size
 			if( host.status == HOST_FRAME &&( refState.width != jni.width || refState.height != jni.height ) )
 			{
-				(*jni.env)->CallStaticVoidMethod( jni.env, jni.actcls, jni.toggleEGL, 0 );
-				(*jni.env)->CallStaticVoidMethod( jni.env, jni.actcls, jni.toggleEGL, 1 );
-				Android_UpdateSurface();
+//				(*jni.env)->CallStaticVoidMethod( jni.env, jni.actcls, jni.toggleEGL, 0 );
+//				(*jni.env)->CallStaticVoidMethod( jni.env, jni.actcls, jni.toggleEGL, 1 );
+				Android_UpdateSurface( true );
 				SetBits( gl_vsync->flags, FCVAR_CHANGED ); // set swap interval
 				VID_SetMode();
 			}
@@ -932,14 +920,14 @@ void Platform_RunEvents( void )
 #endif
 			// disable sound during call/screen-off
 			SNDDMA_Activate( false );
-			host.status = HOST_NOFOCUS;
+//			host.status = HOST_NOFOCUS;
 			// stop blocking UI thread
 			(*jni.env)->CallStaticVoidMethod( jni.env, jni.actcls, jni.notify );
 
 			break;
 		case event_onresume:
 			// re-enable sound after onPause
-			host.status = HOST_FRAME;
+//			host.status = HOST_FRAME;
 			SNDDMA_Activate( true );
 			host.force_draw_version = true;
 			host.force_draw_version_time = host.realtime + FORCE_DRAW_VERSION_TIME;
@@ -947,9 +935,6 @@ void Platform_RunEvents( void )
 		case event_onfocuschange:
 			host.force_draw_version = true;
 			host.force_draw_version_time = host.realtime + FORCE_DRAW_VERSION_TIME;
-			break;
-		case event_setwindow:
-			negl.window = events.queue[i].window;
 			break;
 		}
 	}

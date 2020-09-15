@@ -36,13 +36,11 @@ GNU General Public License for more details.
 #include "netchan.h"
 #include "protocol.h"
 #include "mod_local.h"
-#include "mathlib.h"
+#include "xash3d_mathlib.h"
 #include "input.h"
 #include "enginefeatures.h"
 #include "render_api.h"	// decallist_t
 
-
-typedef void (*pfnChangeGame)( const char *progname );
 
 pfnChangeGame	pChangeGame = NULL;
 host_parm_t		host;	// host parms
@@ -60,6 +58,101 @@ convar_t	*host_framerate;
 convar_t	*host_sleeptime;
 convar_t	*con_gamemaps;
 convar_t	*build, *ver;
+
+void Sys_PrintUsage( void )
+{
+	const char *usage_str;
+
+#define O(x,y) "   "x"  "y"\n"
+
+	usage_str = ""
+#if XASH_MESSAGEBOX == MSGBOX_STDERR
+	"\n" // dirty hack to not have Xash Error: Usage: on same line
+#endif // XASH_MESSAGEBOX == MSGBOX_STDERR
+	"Usage:\n"
+#if !XASH_MOBILE_PLATFORM
+	#if XASH_WIN32
+	O("<xash>.exe [options] [+command1] [+command2 arg]","")
+	#else // XASH_WIN32
+	O("<xash> [options] [+command1] [+command2 arg]","")
+	#endif // !XASH_WIN32
+#endif // !XASH_MOBILE_PLATFORM
+	"Options:\n"
+	O("-dev [level]     ","set log verbosity 0-2")
+	O("-log             ","write log to \"engine.log\"")
+	O("-nowriteconfig   ","disable config save")
+#if !XASH_WIN32
+	O("-casesensitive   ","disable case-insensitive FS emulation")
+#endif // !XASH_WIN32
+#if !XASH_MOBILE_PLATFORM
+	O("-daemonize       ","run engine in background, dedicated only")
+#endif // !XASH_MOBILE_PLATFORM
+
+#if !XASH_DEDICATED
+	O("-toconsole       ","run engine witn console open")
+	O("-width <n>       ","set window width")
+	O("-height <n>      ","set window height")
+	O("-oldfont         ","enable unused Quake font in Half-Life")
+
+	#if !XASH_MOBILE_PLATFORM
+	O("-fullscreen      ","run engine in fullscreen mode")
+	O("-windowed        ","run engine in windowed mode")
+	O("-dedicated       ","run engine in dedicated server mode")
+	#endif // XASH_MOBILE_PLATFORM
+
+	#if XASH_ANDROID
+        O("-nativeegl       ","use native egl implementation. Use if screen does not update or black")
+	#endif // XASH_ANDROID
+
+	#if XASH_WIN32
+        O("-noavi           ","disable AVI support")
+        O("-nointro         ","disable intro video")
+	#endif // XASH_WIN32
+
+	#if XASH_DOS
+	O("-novesa          ","disable vesa")
+	#endif // XASH_DOS
+
+	#if XASH_VIDEO == VIDEO_FBDEV
+	O("-fbdev <path>    ","open selected framebuffer")
+	O("-ttygfx          ","set graphics mode in tty")
+	O("-doublebuffer    ","enable doublebuffering")
+	#endif // XASH_VIDEO == VIDEO_FBDEV
+
+	#if XASH_SOUND == SOUND_ALSA
+	O("-alsadev <dev>   ","open selected ALSA device")
+	#endif // XASH_SOUND == SOUND_ALSA
+
+	O("-nojoy           ","disable joystick support")
+	#ifdef XASH_SDL
+	O("-sdl_joy_old_api ","use SDL legacy joystick API")
+	O("-sdl_renderer <n>","use alternative SDL_Renderer for software")
+	#endif // XASH_SDL
+	O("-nosound         ","disable sound")
+	O("-noenginemouse   ","disable mouse completely")
+
+	O("-ref <name>      ","use selected renderer dll")
+        O("-gldebug         ","enable OpenGL debug log")
+
+#endif // XASH_DEDICATED
+
+	O("-noip            ","disable TCP/IP")
+	O("-noch            ","disable crashhandler")
+	O("-disablehelp     ","disable this message")
+	O("-dll <path>      ","override server DLL path")
+#ifndef XASH_DEDICATED
+	O("-clientlib <path>","override client DLL path")
+#endif
+	O("-rodir <path>    ","set read-only base directory, experimental")
+
+	O("-ip <ip>         ","set custom ip")
+	O("-port <port>     ","set custom host port")
+	O("-clockwindow <cw>","adjust clockwindow")
+	;
+#undef  O
+
+	Sys_Error( "%s", usage_str );
+}
 
 int Host_CompareFileTime( int ft1, int ft2 )
 {
@@ -659,6 +752,27 @@ static void Host_Crash_f( void )
 
 /*
 =================
+Host_Userconfigd_f
+=================
+*/
+void Host_Userconfigd_f( void )
+{
+	search_t *t;
+	int i;
+
+	t = FS_Search( "userconfig.d/*.cfg", true, false );
+	if( !t ) return;
+
+	for( i = 0; i < t->numfilenames; i++ )
+	{
+		Cbuf_AddText( va("exec %s\n", t->filenames[i] ) );
+	}
+
+	Mem_Free( t );
+}
+
+/*
+=================
 Host_InitCommon
 =================
 */
@@ -673,6 +787,14 @@ void Host_InitCommon( int argc, char **argv, const char *progname, qboolean bCha
 	// e.g. xash.exe +game xash -game xash
 	// so we clear all cmd_args, but leave dbg states as well
 	Sys_ParseCommandLine( argc, argv );
+
+	if( !Sys_CheckParm( "-disablehelp" ) )
+	{
+	    if( Sys_CheckParm( "-help" ) || Sys_CheckParm( "-h" ) || Sys_CheckParm( "--help" ) )
+	    {
+			Sys_PrintUsage();
+	    }
+	}
 
 	if( !Sys_CheckParm( "-noch" ) )
 		Sys_SetupCrashHandler();
@@ -775,7 +897,9 @@ void Host_InitCommon( int argc, char **argv, const char *progname, qboolean bCha
 
 	Platform_Init();
 
-	if( ( baseDir = getenv( "XASH3D_BASEDIR" ) ) )
+	baseDir = getenv( "XASH3D_BASEDIR" );
+
+	if( COM_CheckString( baseDir ) )
 	{
 		Q_strncpy( host.rootdir, baseDir, sizeof(host.rootdir) );
 	}
@@ -808,9 +932,9 @@ void Host_InitCommon( int argc, char **argv, const char *progname, qboolean bCha
 	host.rodir[0] = 0;
 	if( !Sys_GetParmFromCmdLine( "-rodir", host.rodir ))
 	{
-		char *roDir;
+		char *roDir = getenv( "XASH3D_RODIR" );
 
-		if(( roDir = getenv( "XASH3D_RODIR" )))
+		if( COM_CheckString( roDir ))
 			Q_strncpy( host.rodir, roDir, sizeof( host.rodir ));
 	}
 
@@ -826,6 +950,7 @@ void Host_InitCommon( int argc, char **argv, const char *progname, qboolean bCha
 
 	Cmd_AddCommand( "exec", Host_Exec_f, "execute a script file" );
 	Cmd_AddCommand( "memlist", Host_MemStats_f, "prints memory pool information" );
+	Cmd_AddCommand( "userconfigd", Host_Userconfigd_f, "execute all scripts from userconfig.d" );
 
 	FS_Init();
 	Image_Init();
@@ -944,6 +1069,8 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
 			Cbuf_AddText( "exec config.cfg\n" );
 			Cbuf_Execute();
 		}
+		// exec all files from userconfig.d 
+		Host_Userconfigd_f();
 		break;
 	case HOST_DEDICATED:
 		// allways parse commandline in dedicated-mode
@@ -959,7 +1086,14 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
 	oldtime = Sys_DoubleTime() - 0.1;
 
 	if( Host_IsDedicated() && GameState->nextstate == STATE_RUNFRAME )
+	{
 		Con_Printf( "type 'map <mapname>' to run server... (TAB-autocomplete is working too)\n" );
+
+		// execute server.cfg after commandline
+		// so we have a chance to set servercfgfile
+		Cbuf_AddText( va( "exec %s\n", Cvar_VariableString( "servercfgfile" )));
+		Cbuf_Execute();
+	}
 
 	// main window message loop
 	while( !host.crashed )

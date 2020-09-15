@@ -14,10 +14,7 @@ GNU General Public License for more details.
 */
 
 #include "common.h"
-#include "mathlib.h"
-#if HAVE_TGMATH_H
-#include <tgmath.h>
-#endif
+#include "xash3d_mathlib.h"
 
 //-----------------------------------------------------------------------------
 // Gamma conversion support

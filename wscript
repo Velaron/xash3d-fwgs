@@ -286,7 +286,8 @@ def configure(conf):
 		'-Werror=duplicated-branches', # BEWARE: buggy
 		'-Werror=bool-compare',
 		'-Werror=bool-operation',
-		'-Wuninitialized',
+		'-Wuninitialized', # older GCC versions have -Wmaybe-uninitialized enabled by this switch, which is not accurate
+                                   # so just warn, not error
 		'-Winit-self',
 		'-Werror=implicit-fallthrough=2', # clang incompatible without "=2"
 #		'-Wdouble-promotion', # disable warning flood
@@ -361,6 +362,14 @@ def configure(conf):
 		conf.define_cond('HAVE_TGMATH_H', tgmath_usable)
 	else:
 		conf.undefine('HAVE_TGMATH_H')
+
+	# check if we can use C99 stdint
+	if conf.check_cc(header_name='stdint.h', mandatory=False):
+		# use system
+		conf.define('STDINT_H', 'stdint.h')
+	else:
+		# include portable stdint by Paul Hsich
+		conf.define('STDINT_H', 'pstdint.h')
 
 	conf.env.DEDICATED     = conf.options.DEDICATED
 	conf.env.SINGLE_BINARY = conf.options.SINGLE_BINARY or conf.env.DEDICATED

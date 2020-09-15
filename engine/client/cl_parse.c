@@ -1578,6 +1578,9 @@ void CL_RegisterResources( sizebuf_t *msg )
 
 			CL_ClearWorld ();
 
+			// update the ref state.
+			R_UpdateRefState ();
+
 			// tell rendering system we have a new set of models.
 			ref.dllFuncs.R_NewMap ();
 
@@ -3167,6 +3170,9 @@ void CL_LegacyPrecache_f( void )
 	cl.audio_prepped = true;
 	if( clgame.entities )
 		clgame.entities->model = cl.worldmodel;
+
+	// update the ref state.
+	R_UpdateRefState ();
 
 	// tell rendering system we have a new set of models.
 	ref.dllFuncs.R_NewMap ();

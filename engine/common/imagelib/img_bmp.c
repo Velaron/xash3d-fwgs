@@ -14,19 +14,8 @@ GNU General Public License for more details.
 */
 
 #include "imagelib.h"
-#include "mathlib.h"
-
-#define BI_SIZE	40 //size of bitmap info header.
-#if !XASH_WIN32
-#define BI_RGB 0
-
-typedef struct tagRGBQUAD {
-	BYTE rgbBlue;
-	BYTE rgbGreen;
-	BYTE rgbRed;
-	BYTE rgbReserved;
-} RGBQUAD;
-#endif
+#include "xash3d_mathlib.h"
+#include "img_bmp.h"
 
 /*
 =============
@@ -36,14 +25,19 @@ Image_LoadBMP
 qboolean Image_LoadBMP( const char *name, const byte *buffer, fs_offset_t filesize )
 {
 	byte	*buf_p, *pixbuf;
-	byte	palette[256][4];
+	rgba_t	palette[256];
 	int	i, columns, column, rows, row, bpp = 1;
 	int	cbPalBytes = 0, padSize = 0, bps = 0;
 	int	reflectivity[3] = { 0, 0, 0 };
 	qboolean	load_qfont = false;
 	bmp_t	bhdr;
+	fs_offset_t estimatedSize;
 
-	if( filesize < sizeof( bhdr )) return false;
+	if( filesize < sizeof( bhdr ))
+	{
+		Con_Reportf( S_ERROR "Image_LoadBMP: %s have incorrect file size %li should be greater than %li (header)\n", name, filesize, sizeof( bhdr ) );
+		return false;
+	}
 
 	buf_p = (byte *)buffer;
 	memcpy( &bhdr, buf_p, sizeof( bmp_t ));
@@ -103,9 +97,16 @@ qboolean Image_LoadBMP( const char *name, const byte *buffer, fs_offset_t filesi
 		if( bhdr.colors == 0 )
 		{
 			bhdr.colors = 256;
-			cbPalBytes = ( 1 << bhdr.bitsPerPixel ) * sizeof( RGBQUAD );
+			cbPalBytes = ( 1 << bhdr.bitsPerPixel ) * sizeof( rgba_t );
 		}
-		else cbPalBytes = bhdr.colors * sizeof( RGBQUAD );
+		else cbPalBytes = bhdr.colors * sizeof( rgba_t );
+	}
+
+	estimatedSize = ( buf_p - buffer ) + cbPalBytes;
+	if( filesize < estimatedSize )
+	{
+		Con_Reportf( S_ERROR "Image_LoadBMP: %s have incorrect file size %li should be greater than %li (palette)\n", name, filesize, estimatedSize );
+		return false;
 	}
 
 	memcpy( palette, buf_p, cbPalBytes );
@@ -154,8 +155,6 @@ qboolean Image_LoadBMP( const char *name, const byte *buffer, fs_offset_t filesi
 	}
 
 	buf_p += cbPalBytes;
-	image.size = image.width * image.height * bpp;
-	image.rgba = Mem_Malloc( host.imagepool, image.size );
 	bps = image.width * (bhdr.bitsPerPixel >> 3);
 
 	switch( bhdr.bitsPerPixel )
@@ -174,6 +173,22 @@ qboolean Image_LoadBMP( const char *name, const byte *buffer, fs_offset_t filesi
 		padSize = ( 4 - ( bps % 4 )) % 4;
 		break;
 	}
+
+	estimatedSize = ( buf_p - buffer ) + ( image.width + padSize ) * image.height * ( bhdr.bitsPerPixel >> 3 );
+	if( filesize < estimatedSize )
+	{
+		if( image.palette )
+		{
+			Mem_Free( image.palette );
+			image.palette = NULL;
+		}
+
+		Con_Reportf( S_ERROR "Image_LoadBMP: %s have incorrect file size %li should be greater than %li (pixels)\n", name, filesize, estimatedSize );
+		return false;
+	}
+
+	image.size = image.width * image.height * bpp;
+	image.rgba = Mem_Malloc( host.imagepool, image.size );
 
 	for( row = rows - 1; row >= 0; row-- )
 	{
@@ -308,7 +323,7 @@ qboolean Image_SaveBMP( const char *name, rgbdata_t *pix )
 {
 	file_t		*pfile = NULL;
 	size_t		total_size, cur_size;
-	RGBQUAD		rgrgbPalette[256];
+	rgba_t		rgrgbPalette[256];
 	dword		cbBmpBits;
 	byte		*clipbuf = NULL;
 	byte		*pb, *pbBmpBits;
@@ -349,12 +364,13 @@ qboolean Image_SaveBMP( const char *name, rgbdata_t *pix )
 	// after create sprite or lump image, it's just standard requiriments 
 	biTrueWidth = ((pix->width + 3) & ~3);
 	cbBmpBits = biTrueWidth * pix->height * pixel_size;
-	cbPalBytes = ( pixel_size == 1 ) ? 256 * sizeof( RGBQUAD ) : 0;
+	cbPalBytes = ( pixel_size == 1 ) ? 256 * sizeof( rgba_t ) : 0;
 
 	// Bogus file header check
 	hdr.id[0] = 'B';
 	hdr.id[1] = 'M';
 	hdr.fileSize =  sizeof( hdr ) + cbBmpBits + cbPalBytes;
+	hdr.reserved0 = 0;
 	hdr.bitmapDataOffset = sizeof( hdr ) + cbPalBytes;
 	hdr.bitmapHeaderSize = BI_SIZE;
 	hdr.width = biTrueWidth;
@@ -379,15 +395,15 @@ qboolean Image_SaveBMP( const char *name, rgbdata_t *pix )
 		// copy over used entries
 		for( i = 0; i < (int)hdr.colors; i++ )
 		{
-			rgrgbPalette[i].rgbRed = *pb++;
-			rgrgbPalette[i].rgbGreen = *pb++;
-			rgrgbPalette[i].rgbBlue = *pb++;
+			rgrgbPalette[i][2] = *pb++;
+			rgrgbPalette[i][1] = *pb++;
+			rgrgbPalette[i][0] = *pb++;
 
 			// bmp feature - can store 32-bit palette if present
 			// some viewers e.g. fimg.exe can show alpha-chanell for it
 			if( pix->type == PF_INDEXED_32 )
-				rgrgbPalette[i].rgbReserved = *pb++;
-			else rgrgbPalette[i].rgbReserved = 0;
+				rgrgbPalette[i][3] = *pb++;
+			else rgrgbPalette[i][3] = 0;
 		}
 
 		// write palette

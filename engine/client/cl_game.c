@@ -2228,7 +2228,7 @@ static pmtrace_t *pfnTraceLine( float *start, float *end, int flags, int usehull
 static void GAME_EXPORT pfnPlaySoundByNameAtLocation( char *szSound, float volume, float *origin )
 {
 	int hSound = S_RegisterSound( szSound );
-	S_StartSound( origin, 0, CHAN_AUTO, hSound, volume, ATTN_NORM, PITCH_NORM, 0 );
+	S_StartSound( origin, cl.viewentity, CHAN_AUTO, hSound, volume, ATTN_NORM, PITCH_NORM, 0 );
 }
 
 /*
@@ -3957,7 +3957,7 @@ qboolean CL_LoadProgs( const char *name )
 #else
 	// this doesn't mean other platforms uses SDL2 in any case
 	// it just helps input code to stay platform-independent
-	clgame.client_dll_uses_sdl = true;
+	clgame.client_dll_uses_sdl = false;
 #endif
 
 	clgame.hInstance = COM_LoadLibrary( name, false, false );

@@ -14,7 +14,7 @@ GNU General Public License for more details.
 */
 
 #include "gl_local.h"
-#include "mathlib.h"
+#include "xash3d_mathlib.h"
 #include "const.h"
 #include "r_studioint.h"
 #include "triangleapi.h"
@@ -23,10 +23,6 @@ GNU General Public License for more details.
 #include "cl_tent.h"
 //#include "client.h"
 #include "pmtrace.h"
-
-#if HAVE_TGMATH_H
-#include <tgmath.h>
-#endif
 
 #define EVENT_CLIENT	5000	// less than this value it's a server-side studio events
 #define MAX_LOCALLIGHTS	4

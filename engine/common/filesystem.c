@@ -32,7 +32,7 @@ GNU General Public License for more details.
 #include "wadfile.h"
 #include "filesystem.h"
 #include "library.h"
-#include "mathlib.h"
+#include "xash3d_mathlib.h"
 #include "protocol.h"
 
 #define FILE_COPY_SIZE		(1024 * 1024)
@@ -1124,7 +1124,7 @@ qboolean FS_AddZip_Fullpath( const char *zipfile, qboolean *already_loaded, int 
   
 	if( already_loaded ) *already_loaded = false;
   
-	if( !Q_stricmp( ext, "zip" ) || !Q_stricmp( ext, "pk3" ) )
+	if( !Q_stricmp( ext, "pk3" ) )
 		zip = FS_LoadZip( zipfile, &errorcode );
   
 	if( zip )
@@ -1383,9 +1383,11 @@ void FS_Rescan( void )
 		FS_AddPak_Fullpath( va( "%sextras_%s.pak", SDL_GetBasePath(), GI->gamefolder ), NULL, extrasFlags );
 	}
 #else
-	if( ( str = getenv( "XASH3D_EXTRAS_PAK1" ) ) )
+	str = getenv( "XASH3D_EXTRAS_PAK1" );
+	if( COM_CheckString( str ) )
 		FS_AddPak_Fullpath( str, NULL, extrasFlags );
-	if( ( str = getenv( "XASH3D_EXTRAS_PAK2" ) ) )
+	str = getenv( "XASH3D_EXTRAS_PAK2" );
+	if( COM_CheckString( str ) )
 		FS_AddPak_Fullpath( str, NULL, extrasFlags );
 #endif
 

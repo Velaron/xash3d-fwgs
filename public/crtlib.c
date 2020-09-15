@@ -21,9 +21,6 @@ GNU General Public License for more details.
 #include <time.h>
 #include "stdio.h"
 #include "crtlib.h"
-#if HAVE_TGMATH_H
-#include <tgmath.h>
-#endif
 
 void Q_strnupr( const char *in, char *out, size_t size_out )
 {
@@ -890,6 +887,64 @@ void COM_ReplaceExtension( char *path, const char *extension )
 	COM_DefaultExtension( path, extension );
 }
 
+/*
+============
+COM_RemoveLineFeed
+============
+*/
+void COM_RemoveLineFeed( char *str )
+{
+	while( *str != '\0' )
+	{
+		if( *str == '\r' || *str == '\n' )
+			*str = '\0';
+
+		++str;
+	}
+}
+
+/*
+============
+COM_PathSlashFix
+============
+*/
+void COM_PathSlashFix( char *path )
+{
+	size_t	len;
+
+	len = Q_strlen( path );
+
+	if( path[len - 1] != '\\' || path[len - 1] != '/' )
+		Q_strcpy( &path[len], "/" );
+}
+
+/*
+============
+COM_Hex2Char
+============
+*/
+char COM_Hex2Char( uint8_t hex )
+{
+	if( hex >= 0x0 && hex <= 0x9 )
+		hex += '0';
+	else if( hex >= 0xA && hex <= 0xF )
+		hex += '7';
+
+	return (char)hex;
+}
+
+/*
+============
+COM_Hex2String
+============
+*/
+void COM_Hex2String( uint8_t hex, char *str )
+{
+	*str++ = COM_Hex2Char( hex >> 4 );
+	*str++ = COM_Hex2Char( hex & 0x0F );
+	*str = '\0';
+}
+
 int matchpattern( const char *in, const char *pattern, qboolean caseinsensitive )
 {
 	return matchpattern_with_separator( in, pattern, caseinsensitive, "/\\:", false );
@@ -955,3 +1010,4 @@ int matchpattern_with_separator( const char *in, const char *pattern, qboolean c
 		return 0; // reached end of pattern but not end of input
 	return 1; // success
 }
+

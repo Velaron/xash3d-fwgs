@@ -69,6 +69,7 @@ SETUP BACKENDS DEFINITIONS
 		#endif // XASH_MESSAGEBOX
 
 		#define XASH_USE_EVDEV
+		#define XASH_DYNAMIC_DLADDR
 	#elif XASH_LINUX
 		// we are building for Linux without SDL2, can draw only to framebuffer yet
 		#ifndef XASH_VIDEO
@@ -132,8 +133,6 @@ SETUP BACKENDS DEFINITIONS
 		#define XASH_CRASHHANDLER CRASHHANDLER_DBGHELP
 	#elif XASH_LINUX || XASH_BSD
 		#define XASH_CRASHHANDLER CRASHHANDLER_UCONTEXT
-	#else // !(XASH_LINUX || XASH_BSD || XASH_WIN32)
-		#define XASH_CRASHHANDLER CRASHHANDLER_NULL
 	#endif // !(XASH_LINUX || XASH_BSD || XASH_WIN32)
 #endif
 
@@ -152,7 +151,7 @@ SETUP BACKENDS DEFINITIONS
 #define XASH_LIB LIB_STATIC
 #define XASH_INTERNAL_GAMELIBS
 #define XASH_ALLOW_SAVERESTORE_OFFSETS
-#elif defined _WIN32
+#elif XASH_WIN32
 #define XASH_LIB LIB_WIN32
 #elif XASH_POSIX
 #define XASH_LIB LIB_POSIX
@@ -173,6 +172,9 @@ SETUP BACKENDS DEFINITIONS
 	#define XASH_INPUT INPUT_NULL
 #endif // XASH_INPUT
 
+#ifndef XASH_CRASHHANDLER
+	#define XASH_CRASHHANDLER CRASHHANDLER_NULL
+#endif // XASH_CRASHHANDLER
 
 /*
 =========================================================================

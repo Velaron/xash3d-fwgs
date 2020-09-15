@@ -1,5 +1,5 @@
 /*
-mathlib.c - internal mathlib
+xash3d_mathlib.c - internal mathlib
 Copyright (C) 2010 Uncle Mike
 
 This program is free software: you can redistribute it and/or modify
@@ -16,11 +16,8 @@ GNU General Public License for more details.
 #include "xash3d_types.h"
 #include "const.h"
 #include "com_model.h"
-#include "mathlib.h"
+#include "xash3d_mathlib.h"
 #include "eiface.h"
-#if HAVE_TGMATH_H
-#include <tgmath.h>
-#endif
 
 #define NUM_HULL_ROUNDS	ARRAYSIZE( hull_table )
 #define HULL_PRECISION	4
@@ -874,3 +871,4 @@ int BoxOnPlaneSide( const vec3_t emins, const vec3_t emaxs, const mplane_t *p )
 
 	return sides;
 }
+

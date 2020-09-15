@@ -14,14 +14,11 @@ GNU General Public License for more details.
 */
 
 #include "gl_local.h"
-#include "mathlib.h"
+#include "xash3d_mathlib.h"
 #include "library.h"
 #include "beamdef.h"
 #include "particledef.h"
 #include "entity_types.h"
-#if HAVE_TGMATH_H
-#include <tgmath.h>
-#endif
 
 #define IsLiquidContents( cnt )	( cnt == CONTENTS_WATER || cnt == CONTENTS_SLIME || cnt == CONTENTS_LAVA )
 
