@@ -44,7 +44,7 @@
 #define Elf_Shdr	Elf32_Shdr
 #define Elf_Sym		Elf32_Sym
 #define Elf_Rel		Elf32_Rel
-#define Elf_RelA	Elf32_Rela
+#define Elf_Rela	Elf32_Rela
 #define Elf_Dyn		Elf32_Dyn
 #define Elf_Half	Elf32_Half
 #define Elf_Word	Elf32_Word
