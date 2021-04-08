@@ -1,8 +1,6 @@
 cmake_minimum_required(VERSION 3.1)
 project(ref_gl)
 
-# ref_gl
-set(XASH_REF_GL ref_gl)
 file(GLOB XASH_REF_GL_SRC "${PROJECT_SOURCE_DIR}/*.c")
 list(
 	APPEND XASH_REF_GL_INC
@@ -16,14 +14,6 @@ list(
 	"${PROJECT_SOURCE_DIR}/../public"
 	"${PROJECT_SOURCE_DIR}"
 )
-add_library(${XASH_REF_GL} MODULE ${XASH_REF_GL_SRC})
-target_include_directories(${XASH_REF_GL} PRIVATE ${XASH_REF_GL_INC})
-target_compile_definitions(${XASH_REF_GL} PRIVATE REF_DLL)
-target_link_libraries(${XASH_REF_GL} public)
-install(TARGETS ${XASH_REF_GL} DESTINATION .)
-if(MSVC)
-	install(FILES $<TARGET_PDB_FILE:${XASH_REF_GL}> DESTINATION . OPTIONAL)
-endif()
 
 if(ANDROID)
 # nanogl
@@ -49,4 +39,15 @@ target_include_directories(${XASH_REF_GLES2} PRIVATE ${XASH_REF_GL_INC})
 target_compile_definitions(${XASH_REF_GLES2} PRIVATE XASH_WES REF_DLL)
 target_link_libraries(${XASH_REF_GLES2} public gl-wes-v2 log)
 install(TARGETS ${XASH_REF_GLES2} DESTINATION .)
+else()
+# ref_gl
+set(XASH_REF_GL ref_gl)
+add_library(${XASH_REF_GL} MODULE ${XASH_REF_GL_SRC})
+target_include_directories(${XASH_REF_GL} PRIVATE ${XASH_REF_GL_INC})
+target_compile_definitions(${XASH_REF_GL} PRIVATE REF_DLL)
+target_link_libraries(${XASH_REF_GL} public)
+install(TARGETS ${XASH_REF_GL} DESTINATION .)
+if(MSVC)
+	install(FILES $<TARGET_PDB_FILE:${XASH_REF_GL}> DESTINATION . OPTIONAL)
+endif()
 endif()
