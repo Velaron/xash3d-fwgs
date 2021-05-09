@@ -298,9 +298,12 @@ def configure(conf):
 			continue
 
 		conf.add_subproject(i.name)
+	
+	conf.load('opus')
 
 def build(bld):
-	bld.load('xshlib')
+	bld.load('opus xshlib')
+
 	for i in SUBDIRS:
 		if not i.is_enabled(bld):
 			continue
