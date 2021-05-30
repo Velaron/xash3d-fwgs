@@ -107,8 +107,8 @@ extern int CL_UPDATE_BACKUP;
 #define MIN_UPDATERATE	10.0f
 #define MAX_UPDATERATE	102.0f
 
-#define MIN_EX_INTERP	50.0f
-#define MAX_EX_INTERP	100.0f
+#define MIN_EX_INTERP	0.005f
+#define MAX_EX_INTERP	0.1f
 
 #define CL_MIN_RESEND_TIME	1.5f		// mininum time gap (in seconds) before a subsequent connection request is sent.
 #define CL_MAX_RESEND_TIME	20.0f		// max time.  The cvar cl_resend is bounded by these.
@@ -658,6 +658,7 @@ extern convar_t	*cl_nopred;
 extern convar_t	*cl_timeout;
 extern convar_t	*cl_nodelta;
 extern convar_t	*cl_interp;
+extern convar_t *cl_nointerp;
 extern convar_t	*cl_showerror;
 extern convar_t	*cl_nosmooth;
 extern convar_t	*cl_smoothtime;
@@ -953,7 +954,7 @@ void CL_EmitEntities( void );
 // cl_remap.c
 //
 remap_info_t *CL_GetRemapInfoForEntity( cl_entity_t *e );
-void CL_AllocRemapInfo( cl_entity_t *ent, int topcolor, int bottomcolor );
+void CL_AllocRemapInfo( cl_entity_t *entity, model_t *model, int topcolor, int bottomcolor );
 void CL_FreeRemapInfo( remap_info_t *info );
 void CL_UpdateRemapInfo( cl_entity_t *ent, int topcolor, int bottomcolor );
 void CL_ClearAllRemaps( void );
