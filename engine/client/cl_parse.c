@@ -484,16 +484,13 @@ void CL_BatchResourceRequest( qboolean initialize )
 		switch( p->type )
 		{
 		case t_sound:
+		case t_model:
+		case t_eventscript:
 			if( !CL_CheckFile( &msg, p ))
 				break;
 			CL_MoveToOnHandList( p );
 			break;
 		case t_skin:
-			CL_MoveToOnHandList( p );
-			break;
-		case t_model:
-			if( !CL_CheckFile( &msg, p ))
-				break;
 			CL_MoveToOnHandList( p );
 			break;
 		case t_decal:
@@ -516,11 +513,6 @@ void CL_BatchResourceRequest( qboolean initialize )
 				Mem_Free( p );
 				break;
 			}
-			if( !CL_CheckFile( &msg, p ))
-				break;
-			CL_MoveToOnHandList( p );
-			break;
-		case t_eventscript:
 			if( !CL_CheckFile( &msg, p ))
 				break;
 			CL_MoveToOnHandList( p );
@@ -1324,30 +1316,6 @@ void CL_RegisterUserMessage( sizebuf_t *msg )
 
 /*
 ================
-CL_RegisterUserMessage
-
-register new user message or update existing
-================
-*/
-/*
-void CL_LegacyRegisterUserMessage( sizebuf_t *msg )
-{
-	char	*pszName;
-	int	svc_num, size;
-
-	svc_num = MSG_ReadByte( msg );
-	size = MSG_ReadByte( msg );
-	pszName = MSG_ReadString( msg );
-
-	// important stuff
-	if( size == 0xFF ) size = -1;
-	svc_num = bound( 0, svc_num, 255 );
-
-	CL_LinkUserMessage( pszName, svc_num, size );
-}
-*/
-/*
-================
 CL_UpdateUserinfo
 
 collect userinfo from all players
@@ -1767,7 +1735,7 @@ void CL_ParseResLocation( sizebuf_t *msg )
 		return;
 	}
 
-	while( ( data = COM_ParseFile( data, token ) ) )
+	while( ( data = COM_ParseFile( data, token, sizeof( token ) ) ) )
 	{
 		Con_Reportf( "Adding %s as download location\n", token );
 
@@ -1843,7 +1811,7 @@ void CL_ParseScreenShake( sizebuf_t *msg )
 	clgame.shake.amplitude = (float)(word)MSG_ReadShort( msg ) * (1.0f / (float)(1<<12));
 	clgame.shake.duration = (float)(word)MSG_ReadShort( msg ) * (1.0f / (float)(1<<12));
 	clgame.shake.frequency = (float)(word)MSG_ReadShort( msg ) * (1.0f / (float)(1<<8));
-	clgame.shake.time = cl.time + max( clgame.shake.duration, 0.01f );
+	clgame.shake.time = cl.time + Q_max( clgame.shake.duration, 0.01f );
 	clgame.shake.next_shake = 0.0f; // apply immediately
 }
 
@@ -1907,45 +1875,88 @@ Find the client cvar value
 and sent it back to the server
 ==============
 */
-void CL_ParseCvarValue( sizebuf_t *msg )
+void CL_ParseCvarValue( sizebuf_t *msg, const qboolean ext )
 {
-	const char *cvarName = MSG_ReadString( msg );
-	convar_t *cvar = Cvar_FindVar( cvarName );
+	const char *cvarName, *response;
+	convar_t *cvar;
+	int requestID;
 
-	// build the answer
-	MSG_BeginClientCmd( &cls.netchan.message, clc_requestcvarvalue );
-	MSG_WriteString( &cls.netchan.message, cvar ? cvar->string : "Not Found" );
+	if( ext )
+		requestID = MSG_ReadLong( msg );
+
+	cvarName = MSG_ReadString( msg );
+	cvar = Cvar_FindVar( cvarName );
+
+	if( cvar )
+	{
+		if( cvar->flags & FCVAR_PRIVILEGED )
+			response = "CVAR is privileged";
+		else if( cvar->flags & FCVAR_SERVER )
+			response = "CVAR is server-only";
+		else if( cvar->flags & FCVAR_PROTECTED )
+			response = "CVAR is protected";
+		else
+			response = cvar->string;
+	}
+	else response = "Bad CVAR request";
+
+	if( ext )
+	{
+		MSG_BeginClientCmd( &cls.netchan.message, clc_requestcvarvalue2 );
+		MSG_WriteLong( &cls.netchan.message, requestID );
+		MSG_WriteString( &cls.netchan.message, cvarName );
+	}
+	else
+	{
+		MSG_BeginClientCmd( &cls.netchan.message, clc_requestcvarvalue );
+	}
+	MSG_WriteString( &cls.netchan.message, response );
 }
 
 /*
 ==============
-CL_ParseCvarValue2
+CL_ParseExec
 
-Find the client cvar value
-and sent it back to the server
+Exec map/class specific configs
 ==============
 */
-void CL_ParseCvarValue2( sizebuf_t *msg )
+void CL_ParseExec( sizebuf_t *msg )
 {
-	int requestID = MSG_ReadLong( msg );
-	const char *cvarName = MSG_ReadString( msg );
-	convar_t *cvar = Cvar_FindVar( cvarName );
+	qboolean is_class;
+	int class_idx;
+	string mapname;
+	const char *class_cfgs[] = {
+		"",
+		"exec scout.cfg\n",
+		"exec sniper.cfg\n",
+		"exec soldier.cfg\n",
+		"exec demoman.cfg\n",
+		"exec medic.cfg\n",
+		"exec hwguy.cfg\n",
+		"exec pyro.cfg\n",
+		"exec spy.cfg\n",
+		"exec engineer.cfg\n",
+		"",
+		"exec civilian.cfg\n"
+	};
 
-	// build the answer
-	MSG_BeginClientCmd( &cls.netchan.message, clc_requestcvarvalue2 );
-	MSG_WriteLong( &cls.netchan.message, requestID );
-	MSG_WriteString( &cls.netchan.message, cvarName );
+	is_class = MSG_ReadByte( msg );
 
-	if( cvar )
+	if ( is_class )
 	{
-		// cheater can change value ignoring Cvar_Set so we responce incorrect value
-		if( cvar->value != Q_atof( cvar->string ))
-			MSG_WriteString( &cls.netchan.message, va( "%s (%g)", cvar->string, cvar->value ));
-		else MSG_WriteString( &cls.netchan.message, cvar->string );
+		class_idx = MSG_ReadByte( msg );
+
+		if ( class_idx >= 0 && class_idx <= 11 && !Q_stricmp( GI->gamefolder, "tfc" ) )
+			Cbuf_AddText( class_cfgs[class_idx] );
 	}
-	else
+	else if ( !Q_stricmp( GI->gamefolder, "tfc" ) )
 	{
-		MSG_WriteString( &cls.netchan.message, "Not Found" );
+		Cbuf_AddText( "exec mapdefault.cfg\n" );
+
+		COM_FileBase( clgame.mapname, mapname );
+
+		if ( COM_CheckString( mapname ) )
+			Cbuf_AddText( va( "exec %s.cfg\n", mapname ) );
 	}
 }
 
@@ -2203,11 +2214,11 @@ void CL_ParseServerMessage( sizebuf_t *msg, qboolean normal_message )
 		case svc_stufftext:
 			s = MSG_ReadString( msg );
 #ifdef HACKS_RELATED_HLMODS
-			// dsiable Cry Of Fear antisave protection
+			// disable Cry Of Fear antisave protection
 			if( !Q_strnicmp( s, "disconnect", 10 ) && cls.signon != SIGNONS )
 				break; // too early
 #endif
-			Cbuf_AddText( s );
+			Cbuf_AddFilteredText( s );
 			break;
 		case svc_setangle:
 			CL_ParseSetAngle( msg );
@@ -2354,10 +2365,13 @@ void CL_ParseServerMessage( sizebuf_t *msg, qboolean normal_message )
 			CL_ParseResLocation( msg );
 			break;
 		case svc_querycvarvalue:
-			CL_ParseCvarValue( msg );
+			CL_ParseCvarValue( msg, false );
 			break;
 		case svc_querycvarvalue2:
-			CL_ParseCvarValue2( msg );
+			CL_ParseCvarValue( msg, true );
+			break;
+		case svc_exec:
+			CL_ParseExec( msg );
 			break;
 		default:
 			CL_ParseUserMessage( msg, cmd );
@@ -2392,13 +2406,10 @@ CL_ParseBaseline
 void CL_LegacyParseBaseline( sizebuf_t *msg )
 {
 	int		i, newnum;
-	entity_state_t	nullstate;
 	qboolean		player;
 	cl_entity_t	*ent;
 
 	Delta_InitClient ();	// finalize client delta's
-
-	memset( &nullstate, 0, sizeof( nullstate ));
 
 	newnum = MSG_ReadWord( msg );
 	player = CL_IsPlayerIndex( newnum );
@@ -2969,13 +2980,13 @@ void CL_ParseLegacyServerMessage( sizebuf_t *msg, qboolean normal_message )
 		case svc_stufftext:
 			s = MSG_ReadString( msg );
 #ifdef HACKS_RELATED_HLMODS
-			// dsiable Cry Of Fear antisave protection
+			// disable Cry Of Fear antisave protection
 			if( !Q_strnicmp( s, "disconnect", 10 ) && cls.signon != SIGNONS )
 				break; // too early
 #endif
 
 			Con_Reportf( "Stufftext: %s", s );
-			Cbuf_AddText( s );
+			Cbuf_AddFilteredText( s );
 			break;
 		case svc_setangle:
 			CL_ParseSetAngle( msg );
@@ -3142,10 +3153,10 @@ void CL_ParseLegacyServerMessage( sizebuf_t *msg, qboolean normal_message )
 			CL_ParseResLocation( msg );
 			break;
 		case svc_querycvarvalue:
-			CL_ParseCvarValue( msg );
+			CL_ParseCvarValue( msg, false );
 			break;
 		case svc_querycvarvalue2:
-			CL_ParseCvarValue2( msg );
+			CL_ParseCvarValue( msg, true );
 			break;
 		default:
 			CL_ParseUserMessage( msg, cmd );

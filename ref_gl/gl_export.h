@@ -401,6 +401,10 @@ typedef float GLmatrix[16];
 #define GL_COMPRESSED_RGBA_S3TC_DXT1_EXT	0x83F1
 #define GL_COMPRESSED_RGBA_S3TC_DXT3_EXT	0x83F2
 #define GL_COMPRESSED_RGBA_S3TC_DXT5_EXT	0x83F3
+#define GL_COMPRESSED_RGBA_BPTC_UNORM_ARB           0x8E8C
+#define GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM_ARB     0x8E8D
+#define GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT_ARB     0x8E8E
+#define GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT_ARB   0x8E8F
 #define GL_COMPRESSED_RED_GREEN_RGTC2_EXT	0x8DBD
 #define GL_COMPRESSED_LUMINANCE_ALPHA_3DC_ATI	0x8837
 #define GL_COMPRESSED_ALPHA_ARB		0x84E9
@@ -687,6 +691,7 @@ typedef float GLmatrix[16];
 #define GL_SAMPLE_COVERAGE_VALUE_ARB		0x80AA
 #define GL_SAMPLE_COVERAGE_INVERT_ARB		0x80AB
 #define GL_MULTISAMPLE_BIT_ARB		0x20000000
+#define GL_TEXTURE_2D_MULTISAMPLE			0x9100
 
 #define GL_COLOR_SUM_ARB			0x8458
 #define GL_VERTEX_PROGRAM_ARB			0x8620
@@ -1353,6 +1358,10 @@ APIENTRY_LINKAGE void GL_FUNCTION( glGenVertexArrays )( GLsizei n, const GLuint 
 APIENTRY_LINKAGE GLboolean GL_FUNCTION( glIsVertexArray )( GLuint array );
 APIENTRY_LINKAGE void GL_FUNCTION( glSwapInterval ) ( int interval );
 
+#if !defined( XASH_GLES ) && !defined( XASH_GL4ES )
+APIENTRY_LINKAGE void GL_FUNCTION( glTexImage2DMultisample )(GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height, GLboolean fixedsamplelocations);
+#endif /* !XASH_GLES && !XASH_GL4ES */
+
 #if defined( XASH_GL_STATIC ) && !defined( REF_GL_KEEP_MANGLED_FUNCTIONS )
 #define pglGetError glGetError
 #define pglGetString glGetString
@@ -1652,6 +1661,7 @@ APIENTRY_LINKAGE void GL_FUNCTION( glSwapInterval ) ( int interval );
 #define pglTexGeniv glTexGeniv
 #define pglTexImage1D glTexImage1D
 #define pglTexImage2D glTexImage2D
+#define pglTexImage2DMultisample glTexImage2DMultisample
 #define pglTexParameterf glTexParameterf
 #define pglTexParameterfv glTexParameterfv
 #define pglTexParameteri glTexParameteri

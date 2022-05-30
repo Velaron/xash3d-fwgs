@@ -20,9 +20,6 @@ ref_globals_t *gpGlobals;
 gl_globals_t tr;
 ref_speeds_t r_stats;
 poolhandle_t r_temppool;
-cvar_t *gl_emboss_scale;
-cvar_t *r_norefresh;
-cvar_t	*vid_brightness;
 viddef_t vid;
 static void GAME_EXPORT R_ClearScreen( void )
 {
@@ -470,6 +467,7 @@ ref_interface_t gReffuncs =
 	R_DrawTileClear,
 	CL_FillRGBA,
 	CL_FillRGBABlend,
+	R_WorldToScreen,
 
 	VID_ScreenShot,
 	VID_CubemapShot,
@@ -556,7 +554,6 @@ ref_interface_t gReffuncs =
 	TriTexCoord2f,
 	TriVertex3fv,
 	TriVertex3f,
-	TriWorldToScreen,
 	TriFog,
 	R_ScreenToWorld,
 	TriGetMatrix,

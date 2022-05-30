@@ -69,8 +69,7 @@ GNU General Public License for more details.
 //  bytes will be stripped by the networking channel layer
 #define NET_MAX_MESSAGE		PAD_NUMBER(( NET_MAX_PAYLOAD + HEADER_BYTES ), 16 )
 
-#define MASTERSERVER_ADR		"ms.xash.su:27010"
-#define MASTERSERVER_ADR2		"ms2.xash.su:27010"
+#define MASTERSERVER_ADR		"mentality.rip:27010"
 #define MS_SCAN_REQUEST		"1\xFF" "0.0.0.0:0\0"
 
 #define PORT_MASTER			27010
@@ -297,7 +296,7 @@ int Netchan_CreateFileFragments( netchan_t *chan, const char *filename );
 void Netchan_Transmit( netchan_t *chan, int lengthInBytes, byte *data );
 void Netchan_TransmitBits( netchan_t *chan, int lengthInBits, byte *data );
 void Netchan_OutOfBand( int net_socket, netadr_t adr, int length, byte *data );
-void Netchan_OutOfBandPrint( int net_socket, netadr_t adr, char *format, ... ) _format( 3 );
+void Netchan_OutOfBandPrint( int net_socket, netadr_t adr, const char *format, ... ) _format( 3 );
 qboolean Netchan_Process( netchan_t *chan, sizebuf_t *msg );
 void Netchan_UpdateProgress( netchan_t *chan );
 qboolean Netchan_IncomingReady( netchan_t *chan );

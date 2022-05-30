@@ -28,9 +28,12 @@ convar_t	*con_fontsize;
 convar_t	*con_charset;
 convar_t	*con_fontscale;
 convar_t	*con_fontnum;
+convar_t        *con_color;
 
 static int g_codepage = 0;
 static qboolean g_utf8 = false;
+
+static qboolean g_messagemode_privileged = true;
 
 #define CON_TIMES		4	// notify lines
 #define CON_MAX_TIMES	64	// notify max lines
@@ -78,6 +81,14 @@ typedef struct con_lineinfo_s
 	double		addtime;		// notify stuff
 } con_lineinfo_t;
 
+typedef struct con_history_s
+{
+	field_t lines[CON_HISTORY];
+	field_t backup;
+	int     line; // the line being displayed from history buffer will be <= nextHistoryLine
+	int     next; // the last line in the history buffer, not masked
+} con_history_t;
+
 typedef struct
 {
 	qboolean		initialized;
@@ -115,10 +126,8 @@ typedef struct
 	string		chat_cmd;		// can be overrieded by user
 
 	// console history
-	field_t		historyLines[CON_HISTORY];
-	int		historyLine;	// the line being displayed from history buffer will be <= nextHistoryLine
-	int		nextHistoryLine;	// the last line in the history buffer, not masked
-	field_t backup;
+	con_history_t	history;
+	qboolean		historyLoaded;
 
 	notify_t		notify[MAX_DBG_NOTIFY]; // for Con_NXPrintf
 	qboolean		draw_notify;	// true if we have NXPrint message
@@ -131,6 +140,9 @@ static console_t		con;
 
 void Con_ClearField( field_t *edit );
 void Field_CharEvent( field_t *edit, int ch );
+
+static void Con_LoadHistory( con_history_t *self );
+static void Con_SaveHistory( con_history_t *self );
 
 /*
 ================
@@ -145,31 +157,34 @@ void Con_Clear_f( void )
 
 /*
 ================
-Con_SetColor_f
+Con_SetColor
 ================
 */
-void Con_SetColor_f( void )
+static void Con_SetColor( void )
 {
-	vec3_t	color;
+	vec3_t color;
+	int r, g, b;
+	int num;
 
-	switch( Cmd_Argc( ))
+	if( !FBitSet( con_color->flags, FCVAR_CHANGED ))
+		return;
+
+	num = sscanf( con_color->string, "%i %i %i", &r, &g, &b );
+
+	switch( num )
 	{
 	case 1:
-		Con_Printf( "\"con_color\" is %i %i %i\n", g_color_table[7][0], g_color_table[7][1], g_color_table[7][2] );
+		Con_DefaultColor( r, r, r );
 		break;
-	case 2:
-		VectorSet( color, g_color_table[7][0], g_color_table[7][1], g_color_table[7][2] );
-		Q_atov( color, Cmd_Argv( 1 ), 3 );
-		Con_DefaultColor( color[0], color[1], color[2] );
-		break;
-	case 4:
-		VectorSet( color, Q_atof( Cmd_Argv( 1 )), Q_atof( Cmd_Argv( 2 )), Q_atof( Cmd_Argv( 3 )));
-		Con_DefaultColor( color[0], color[1], color[2] );
+	case 3:
+		Con_DefaultColor( r, g, b );
 		break;
 	default:
-		Con_Printf( S_USAGE "con_color \"r g b\"\n" );
+		Cvar_DirectSet( con_color, con_color->def_string );
 		break;
 	}
+
+	ClearBits( con_color->flags, FCVAR_CHANGED );
 }
 
 /*
@@ -192,8 +207,6 @@ Con_ClearTyping
 */
 void Con_ClearTyping( void )
 {
-	int	i;
-
 	Con_ClearField( &con.input );
 	con.input.widthInChars = con.linewidth;
 
@@ -238,6 +251,8 @@ Con_MessageMode_f
 */
 void Con_MessageMode_f( void )
 {
+	g_messagemode_privileged = Cmd_CurrentCommandIsPrivileged();
+
 	if( Cmd_Argc() == 2 )
 		Q_strncpy( con.chat_cmd, Cmd_Argv( 1 ), sizeof( con.chat_cmd ));
 	else Q_strncpy( con.chat_cmd, "say", sizeof( con.chat_cmd ));
@@ -252,6 +267,8 @@ Con_MessageMode2_f
 */
 void Con_MessageMode2_f( void )
 {
+	g_messagemode_privileged = Cmd_CurrentCommandIsPrivileged();
+
 	Q_strncpy( con.chat_cmd, "say_team", sizeof( con.chat_cmd ));
 	Key_SetKeyDest( key_message );
 }
@@ -476,7 +493,7 @@ void Con_CheckResize( void )
 	con.input.widthInChars = con.linewidth;
 
 	for( i = 0; i < CON_HISTORY; i++ )
-		con.historyLines[i].widthInChars = con.linewidth;
+		con.history.lines[i].widthInChars = con.linewidth;
 }
 
 /*
@@ -671,7 +688,9 @@ static void Con_LoadConchars( void )
 		Con_LoadConsoleFont( i, con.chars + i );
 
 	// select properly fontsize
-	if( refState.width <= 640 )
+	if( con_fontnum->value >= 0 && con_fontnum->value <= CON_NUMFONTS - 1 )
+		fontSize = con_fontnum->value;
+	else if( refState.width <= 640 )
 		fontSize = 0;
 	else if( refState.width >= 1280 )
 		fontSize = 2;
@@ -990,10 +1009,12 @@ void GAME_EXPORT Con_DrawStringLen( const char *pText, int *length, int *height 
 {
 	int	curLength = 0;
 
-	if( !con.curFont ) return;
-
-	if( height ) *height = con.curFont->charHeight;
-	if( !length ) return;
+	if( !con.curFont )
+		return;
+	if( height )
+		*height = con.curFont->charHeight;
+	if (!length)
+		return;
 
 	*length = 0;
 
@@ -1048,7 +1069,7 @@ int Con_DrawGenericString( int x, int y, const char *string, rgba_t setColor, qb
 	Con_UtfProcessChar( 0 );
 
 	// draw the colored text
-	*(uint *)color = *(uint *)setColor;
+	memcpy( color, setColor, sizeof( color ));
 	s = string;
 
 	while( *s )
@@ -1099,61 +1120,6 @@ int Con_DrawString( int x, int y, const char *string, rgba_t setColor )
 	return Con_DrawGenericString( x, y, string, setColor, false, -1 );
 }
 
-void Con_LoadHistory( void )
-{
-	const byte *aFile = FS_LoadFile( "console_history.txt", NULL, true );
-	const char *pLine = (char *)aFile, *pFile = (char *)aFile;
-	int i;
-
-	if( !aFile )
-		return;
-
-	while( true )
-	{
-		if( !*pFile )
-				break;
-		if( *pFile == '\n')
-		{
-				int len = pFile - pLine + 1;
-				field_t *f;
-				if( len > 255 ) len = 255;
-				Con_ClearField( &con.historyLines[con.nextHistoryLine] );
-				f = &con.historyLines[con.nextHistoryLine % CON_HISTORY];
-				f->widthInChars = con.linewidth;
-				f->cursor = len - 1;
-				Q_strncpy( f->buffer, pLine, len);
-				con.nextHistoryLine++;
-				pLine = pFile + 1;
-		}
-		pFile++;
-	}
-
-	for( i = con.nextHistoryLine; i < CON_HISTORY; i++ )
-	{
-		Con_ClearField( &con.historyLines[i] );
-		con.historyLines[i].widthInChars = con.linewidth;
-	}
-
-	con.historyLine = con.nextHistoryLine;
-
-}
-
-void Con_SaveHistory( void )
-{
-	int historyStart = con.nextHistoryLine - CON_HISTORY;
-	int i;
-	file_t *f;
-
-	if( historyStart < 0 )
-		historyStart = 0;
-
-	f = FS_Open("console_history.txt", "w", true );
-
-	for( i = historyStart; i < con.nextHistoryLine; i++ )
-		FS_Printf( f, "%s\n", con.historyLines[i % CON_HISTORY].buffer );
-
-	FS_Close(f);
-}
 
 /*
 ================
@@ -1174,6 +1140,7 @@ void Con_Init( void )
 	con_charset = Cvar_Get( "con_charset", "cp1251", FCVAR_ARCHIVE, "console font charset (only cp1251 supported now)" );
 	con_fontscale = Cvar_Get( "con_fontscale", "1.0", FCVAR_ARCHIVE, "scale font texture" );
 	con_fontnum = Cvar_Get( "con_fontnum", "-1", FCVAR_ARCHIVE, "console font number (0, 1 or 2), -1 for autoselect" );
+	con_color = Cvar_Get( "con_color", "240 180 24", FCVAR_ARCHIVE, "set a custom console color" );
 
 	// init the console buffer
 	con.bufsize = CON_TEXTSIZE;
@@ -1192,8 +1159,7 @@ void Con_Init( void )
 	con.chat.widthInChars = con.linewidth;
 
 	Cmd_AddCommand( "toggleconsole", Con_ToggleConsole_f, "opens or closes the console" );
-	Cmd_AddCommand( "con_color", Con_SetColor_f, "set a custom console color" );
-	Cmd_AddCommand( "clear", Con_Clear_f, "clear console history" );
+	Cmd_AddRestrictedCommand( "clear", Con_Clear_f, "clear console history" );
 	Cmd_AddCommand( "messagemode", Con_MessageMode_f, "enable message mode \"say\"" );
 	Cmd_AddCommand( "messagemode2", Con_MessageMode2_f, "enable message mode \"say_team\"" );
 	Cmd_AddCommand( "contimes", Con_SetTimes_f, "change number of console overlay lines (4-64)" );
@@ -1219,7 +1185,7 @@ void Con_Shutdown( void )
 
 	con.buffer = NULL;
 	con.lines = NULL;
-	Con_SaveHistory();
+	Con_SaveHistory( &con.history );
 }
 
 /*
@@ -1454,9 +1420,20 @@ Con_ClearField
 */
 void Con_ClearField( field_t *edit )
 {
-	memset(edit->buffer, 0, MAX_STRING);
+	memset( edit->buffer, 0, MAX_STRING );
 	edit->cursor = 0;
 	edit->scroll = 0;
+}
+
+/*
+================
+Field_Set
+================
+*/
+static void Field_Set( field_t *f, const char *string )
+{
+	f->scroll = 0;
+	f->cursor = Q_strncpy( f->buffer, string, MAX_STRING );
 }
 
 /*
@@ -1476,6 +1453,18 @@ void Field_Paste( field_t *edit )
 	pasteLen = Q_strlen( cbd );
 	for( i = 0; i < pasteLen; i++ )
 		Field_CharEvent( edit, cbd[i] );
+}
+
+/*
+=================
+Field_GoTo
+
+=================
+*/
+static void Field_GoTo( field_t *edit, int pos )
+{
+	edit->cursor = pos;
+	edit->scroll = Q_max( 0, edit->cursor - edit->widthInChars );
 }
 
 /*
@@ -1530,20 +1519,20 @@ void Field_KeyDownEvent( field_t *edit, int key )
 
 	if( key == K_LEFTARROW )
 	{
-		if( edit->cursor > 0 ) edit->cursor= Con_UtfMoveLeft( edit->buffer, edit->cursor );
+		if( edit->cursor > 0 ) edit->cursor = Con_UtfMoveLeft( edit->buffer, edit->cursor );
 		if( edit->cursor < edit->scroll ) edit->scroll--;
 		return;
 	}
 
 	if( key == K_HOME || ( Q_tolower(key) == 'a' && Key_IsDown( K_CTRL )))
 	{
-		edit->cursor = 0;
+		Field_GoTo( edit, 0 );
 		return;
 	}
 
 	if( key == K_END || ( Q_tolower(key) == 'e' && Key_IsDown( K_CTRL )))
 	{
-		edit->cursor = len;
+		Field_GoTo( edit, len );
 		return;
 	}
 
@@ -1582,16 +1571,14 @@ void Field_CharEvent( field_t *edit, int ch )
 	if( ch == 'a' - 'a' + 1 )
 	{
 		// ctrl-a is home
-		edit->cursor = 0;
-		edit->scroll = 0;
+		Field_GoTo( edit, 0 );
 		return;
 	}
 
 	if( ch == 'e' - 'a' + 1 )
 	{
 		// ctrl-e is end
-		edit->cursor = len;
-		edit->scroll = edit->cursor - edit->widthInChars;
+		Field_GoTo( edit, len );
 		return;
 	}
 
@@ -1697,9 +1684,131 @@ void Field_DrawInputLine( int x, int y, field_t *edit )
 /*
 =============================================================================
 
+CONSOLE HISTORY HANDLING
+
+=============================================================================
+*/
+/*
+===================
+Con_HistoryUp
+
+===================
+*/
+static void Con_HistoryUp( con_history_t *self, field_t *in )
+{
+	if( self->line == self->next )
+		self->backup = *in;
+
+	if(( self->next - self->line ) < CON_HISTORY )
+		self->line = Q_max( 0, self->line - 1 );
+
+	*in = self->lines[self->line % CON_HISTORY];
+}
+
+/*
+===================
+Con_HistoryDown
+
+===================
+*/
+static void Con_HistoryDown( con_history_t *self, field_t *in )
+{
+	self->line = Q_min( self->next, self->line + 1 );
+	if( self->line == self->next )
+		*in = self->backup;
+	else *in = self->lines[self->line % CON_HISTORY];
+}
+
+/*
+===================
+Con_HistoryAppend
+===================
+*/
+static void Con_HistoryAppend( con_history_t *self, field_t *from )
+{
+	int prevLine = Q_max( 0, self->line - 1 );
+	const char *buf = from->buffer;
+
+	// skip backslashes
+	if( from->buffer[0] == '\\' || from->buffer[1] == '/' )
+		buf++;
+
+	// only if non-empty
+	if( !from->buffer[0] )
+		return;
+
+	// skip empty commands
+	if( Q_isspace( buf ))
+		return;
+
+	// if not copy (don't ignore backslashes)
+	if( !Q_strcmp( from->buffer, self->lines[prevLine % CON_HISTORY].buffer ))
+		return;
+
+	self->lines[self->next % CON_HISTORY] = *from;
+	self->line = ++self->next;
+}
+
+static void Con_LoadHistory( con_history_t *self )
+{
+	const byte *aFile = FS_LoadFile( "console_history.txt", NULL, true );
+	const char *pLine, *pFile;
+	int i, len;
+	field_t *f;
+
+	if( !aFile )
+		return;
+
+	for( pFile = pLine = (char *)aFile; *pFile; pFile++ )
+	{
+		if( *pFile != '\n' )
+			continue;
+
+		Con_ClearField( &self->lines[self->next] );
+
+		len = Q_min( pFile - pLine + 1, sizeof( f->buffer ));
+		f = &self->lines[self->next % CON_HISTORY];
+		f->widthInChars = con.linewidth;
+		f->cursor = len - 1;
+		Q_strncpy( f->buffer, pLine, len);
+
+		self->next++;
+
+		pLine = pFile + 1;
+	}
+
+	for( i = self->next; i < CON_HISTORY; i++ )
+	{
+		Con_ClearField( &self->lines[i] );
+		self->lines[i].widthInChars = con.linewidth;
+	}
+
+	self->line = self->next;
+}
+
+static void Con_SaveHistory( con_history_t *self )
+{
+	int historyStart = self->next - CON_HISTORY, i;
+	file_t *f;
+
+	if( historyStart < 0 )
+		historyStart = 0;
+
+	f = FS_Open( "console_history.txt", "w", true );
+
+	for( i = historyStart; i < self->next; i++ )
+		FS_Printf( f, "%s\n", self->lines[i % CON_HISTORY].buffer );
+
+	FS_Close( f );
+}
+
+
+/*
+=============================================================================
+
 CONSOLE LINE EDITING
 
-==============================================================================
+=============================================================================
 */
 /*
 ====================
@@ -1720,16 +1829,6 @@ void Key_Console( int key )
 	// enter finishes the line
 	if( key == K_ENTER || key == K_KP_ENTER )
 	{
-		// if not in the game explicitly prepent a slash if needed
-		if( cls.state != ca_active && con.input.buffer[0] != '\\' && con.input.buffer[0] != '/' )
-		{
-			char	temp[MAX_SYSPATH];
-
-			Q_strncpy( temp, con.input.buffer, sizeof( temp ));
-			Q_sprintf( con.input.buffer, "\\%s", temp );
-			con.input.cursor++;
-		}
-
 		// backslash text are commands, else chat
 		if( con.input.buffer[0] == '\\' || con.input.buffer[0] == '/' )
 			Cbuf_AddText( con.input.buffer + 1 ); // skip backslash
@@ -1740,9 +1839,7 @@ void Key_Console( int key )
 		Con_Printf( ">%s\n", con.input.buffer );
 
 		// copy line to history buffer
-		con.historyLines[con.nextHistoryLine % CON_HISTORY] = con.input;
-		con.nextHistoryLine++;
-		con.historyLine = con.nextHistoryLine;
+		Con_HistoryAppend( &con.history, &con.input );
 
 		Con_ClearField( &con.input );
 		con.input.widthInChars = con.linewidth;
@@ -1767,23 +1864,13 @@ void Key_Console( int key )
 	// command history (ctrl-p ctrl-n for unix style)
 	if(( key == K_MWHEELUP && Key_IsDown( K_SHIFT )) || ( key == K_UPARROW ) || (( Q_tolower(key) == 'p' ) && Key_IsDown( K_CTRL )))
 	{
-		if( con.historyLine == con.nextHistoryLine )
-			con.backup = con.input;
-		if( con.nextHistoryLine - con.historyLine < CON_HISTORY && con.historyLine > 0 )
-			con.historyLine--;
-		con.input = con.historyLines[con.historyLine % CON_HISTORY];
+		Con_HistoryUp( &con.history, &con.input );
 		return;
 	}
 
 	if(( key == K_MWHEELDOWN && Key_IsDown( K_SHIFT )) || ( key == K_DOWNARROW ) || (( Q_tolower(key) == 'n' ) && Key_IsDown( K_CTRL )))
 	{
-		if( con.historyLine >= con.nextHistoryLine - 1 )
-			con.input = con.backup;
-		else
-		{
-			con.historyLine++;
-			con.input = con.historyLines[con.historyLine % CON_HISTORY];
-		}
+		Con_HistoryDown( &con.history, &con.input );
 		return;
 	}
 
@@ -1857,7 +1944,10 @@ void Key_Message( int key )
 		if( con.chat.buffer[0] && cls.state == ca_active )
 		{
 			Q_snprintf( buffer, sizeof( buffer ), "%s \"%s\"\n", con.chat_cmd, con.chat.buffer );
-			Cbuf_AddText( buffer );
+
+			if( g_messagemode_privileged )
+				Cbuf_AddText( buffer );
+			else Cbuf_AddFilteredText( buffer );
 		}
 
 		Key_SetKeyDest( key_game );
@@ -2084,6 +2174,9 @@ void Con_DrawSolidConsole( int lines )
 	int	i, x, y;
 	float	fraction;
 	int	start;
+	int	stringLen, width = 0, charH;
+	string	curbuild;
+	byte	color[4];
 
 	if( lines <= 0 ) return;
 
@@ -2097,28 +2190,20 @@ void Con_DrawSolidConsole( int lines )
 	if( !con.curFont || !host.allow_console )
 		return; // nothing to draw
 
-	if( host.allow_console )
-	{
-		// draw current version
-		int	stringLen, width = 0, charH;
-		string	curbuild;
-		byte	color[4];
+	// draw current version
+	memcpy( color, g_color_table[7], sizeof( color ));
 
-		memcpy( color, g_color_table[7], sizeof( color ));
+	Q_snprintf( curbuild, MAX_STRING, "%s %i/%s (%s-%s build %i)", XASH_ENGINE_NAME, PROTOCOL_VERSION, XASH_VERSION, Q_buildos(), Q_buildarch(), Q_buildnum( ));
 
+	Con_DrawStringLen( curbuild, &stringLen, &charH );
+	start = refState.width - stringLen;
+	stringLen = Con_StringLength( curbuild );
 
-		Q_snprintf( curbuild, MAX_STRING, "%s %i/%s (%s-%s build %i)", XASH_ENGINE_NAME, PROTOCOL_VERSION, XASH_VERSION, Q_buildos(), Q_buildarch(), Q_buildnum( ));
+	fraction = lines / (float)refState.height;
+	color[3] = Q_min( fraction * 2.0f, 1.0f ) * 255; // fadeout version number
 
-		Con_DrawStringLen( curbuild, &stringLen, &charH );
-		start = refState.width - stringLen;
-		stringLen = Con_StringLength( curbuild );
-
-		fraction = lines / (float)refState.height;
-		color[3] = Q_min( fraction * 2.0f, 1.0f ) * 255; // fadeout version number
-
-		for( i = 0; i < stringLen; i++ )
-			width += Con_DrawCharacter( start + width, 0, curbuild[i], color );
-	}
+	for( i = 0; i < stringLen; i++ )
+		width += Con_DrawCharacter( start + width, 0, curbuild[i], color );
 
 	// draw the text
 	if( CON_LINES_COUNT > 0 )
@@ -2155,7 +2240,7 @@ void Con_DrawSolidConsole( int lines )
 	Con_DrawInput( lines );
 
 	y = lines - ( con.curFont->charHeight * 1.2f );
-	SCR_DrawFPS( max( y, 4 )); // to avoid to hide fps counter
+	SCR_DrawFPS( Q_max( y, 4 )); // to avoid to hide fps counter
 
 	ref.dllFuncs.Color4ub( 255, 255, 255, 255 );
 }
@@ -2284,6 +2369,8 @@ void Con_RunConsole( void )
 {
 	float	lines_per_frame;
 
+	Con_SetColor( );
+
 	// decide on the destination height of the console
 	if( host.allow_console && cls.key_dest == key_console )
 	{
@@ -2369,6 +2456,12 @@ INTERNAL RESOURCE
 */
 void Con_VidInit( void )
 {
+	if( !con.historyLoaded )
+	{
+		Con_LoadHistory( &con.history );
+		con.historyLoaded = true;
+	}
+
 	Con_LoadConchars();
 	Con_CheckResize();
 #if XASH_LOW_MEMORY
@@ -2403,7 +2496,6 @@ void Con_VidInit( void )
 				con.background = ref.dllFuncs.GL_LoadTexture( "cached/loading", NULL, 0, TF_IMAGE );
 		}
 	}
-
 
 	if( !con.background ) // last chance - quake conback image
 	{
@@ -2492,3 +2584,48 @@ void GAME_EXPORT Con_DefaultColor( int r, int g, int b )
 	b = bound( 0, b, 255 );
 	MakeRGBA( g_color_table[7], r, g, b, 255 );
 }
+
+#if XASH_ENGINE_TESTS
+#include "tests.h"
+
+static void Test_RunConHistory( void )
+{
+	con_history_t hist = { 0 };
+	field_t input = { 0 };
+	const char *strs1[] = { "map t0a0", "quit", "wtf", "wtf", "", "nyan" };
+	const char *strs2[] = { "nyan", "wtf", "quit", "map t0a0" };
+	const char *testbackup = "unfinished_edit";
+	int i;
+
+	for( i = 0; i < ARRAYSIZE( strs1 ); i++ )
+	{
+		Field_Set( &input, strs1[i] );
+		Con_HistoryAppend( &hist, &input );
+	}
+
+	Field_Set( &input, testbackup );
+
+	for( i = 0; i < ARRAYSIZE( strs2 ); i++ )
+	{
+		Con_HistoryUp( &hist, &input );
+		TASSERT_STR( input.buffer, strs2[i] );
+	}
+
+	// check for overrun
+	Con_HistoryUp( &hist, &input );
+
+	for( i = ARRAYSIZE( strs2 ) - 1; i >= 0; i-- )
+	{
+		TASSERT_STR( input.buffer, strs2[i] );
+		Con_HistoryDown( &hist, &input );
+	}
+
+	TASSERT_STR( input.buffer, testbackup );
+}
+
+void Test_RunCon( void )
+{
+	TRUN( Test_RunConHistory() );
+}
+
+#endif /* XASH_ENGINE_TESTS */

@@ -101,7 +101,7 @@ qboolean SV_CheckID( const char *id )
 	for( filter = cidfilter; filter; filter = filter->next )
 	{
 		int len1 = Q_strlen( id ), len2 = Q_strlen( filter->id );
-		int len = min( len1, len2 );
+		int len = Q_min( len1, len2 );
 
 		while( filter->endTime && host.realtime > filter->endTime )
 		{
@@ -426,14 +426,14 @@ static void SV_WriteIP_f( void )
 
 void SV_InitFilter( void )
 {
-	Cmd_AddCommand( "banid", SV_BanID_f, "ban player by ID" );
-	Cmd_AddCommand( "listid", SV_ListID_f, "list banned players" );
-	Cmd_AddCommand( "removeid", SV_RemoveID_f, "remove player from banned list" );
-	Cmd_AddCommand( "writeid", SV_WriteID_f, "write banned.cfg" );
-	Cmd_AddCommand( "addip", SV_AddIP_f, "add entry to IP filter" );
-	Cmd_AddCommand( "listip", SV_ListIP_f, "list current IP filter" );
-	Cmd_AddCommand( "removeip", SV_RemoveIP_f, "remove IP filter" );
-	Cmd_AddCommand( "writeip", SV_WriteIP_f, "write listip.cfg" );
+	Cmd_AddRestrictedCommand( "banid", SV_BanID_f, "ban player by ID" );
+	Cmd_AddRestrictedCommand( "listid", SV_ListID_f, "list banned players" );
+	Cmd_AddRestrictedCommand( "removeid", SV_RemoveID_f, "remove player from banned list" );
+	Cmd_AddRestrictedCommand( "writeid", SV_WriteID_f, "write banned.cfg" );
+	Cmd_AddRestrictedCommand( "addip", SV_AddIP_f, "add entry to IP filter" );
+	Cmd_AddRestrictedCommand( "listip", SV_ListIP_f, "list current IP filter" );
+	Cmd_AddRestrictedCommand( "removeip", SV_RemoveIP_f, "remove IP filter" );
+	Cmd_AddRestrictedCommand( "writeip", SV_WriteIP_f, "write listip.cfg" );
 }
 
 void SV_ShutdownFilter( void )

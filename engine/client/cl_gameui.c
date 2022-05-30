@@ -417,6 +417,8 @@ static void UI_ConvertGameInfo( GAMEINFO *out, gameinfo_t *in )
 		out->flags |= GFL_NOMODELS;
 	if( in->noskills )
 		out->flags |= GFL_NOSKILLS;
+	if( in->render_picbutton_text )
+		out->flags |= GFL_RENDER_PICBUTTON_TEXT;
 }
 
 static qboolean PIC_Scissor( float *x, float *y, float *width, float *height, float *u0, float *v0, float *u1, float *v1 )
@@ -1106,6 +1108,17 @@ static void GAME_EXPORT UI_ShellExecute( const char *path, const char *parms, in
 		Sys_Quit();
 }
 
+/*
+==============
+pfnParseFile
+
+legacy wrapper
+==============
+*/
+static char *pfnParseFile( char *buf, char *token )
+{
+	return COM_ParseFile( buf, token, INT_MAX );
+}
 
 // engine callbacks
 static ui_enginefuncs_t gEngfuncs =
@@ -1159,7 +1172,7 @@ static ui_enginefuncs_t gEngfuncs =
 	CL_Active,
 	pfnClientJoin,
 	COM_LoadFileForMe,
-	COM_ParseFile,
+	pfnParseFile,
 	COM_FreeFile,
 	Key_ClearStates,
 	Key_SetKeyDest,
@@ -1221,7 +1234,9 @@ static ui_extendedfuncs_t gExtendedfuncs =
 	Con_UtfMoveLeft,
 	Con_UtfMoveRight,
 	pfnGetRenderers,
-	Sys_DoubleTime
+	Sys_DoubleTime,
+	_COM_ParseFileSafe,
+	NET_AdrToString
 };
 
 void UI_UnloadProgs( void )

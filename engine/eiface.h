@@ -278,6 +278,9 @@ typedef struct enginefuncs_s
 	void	(*pfnQueryClientCvarValue)( const edict_t *player, const char *cvarName );
 	void	(*pfnQueryClientCvarValue2)( const edict_t *player, const char *cvarName, int requestID );
 	int	(*pfnCheckParm)( char *parm, char **ppnext );
+
+	// added in 8279
+	edict_t* (*pfnPEntityOfEntIndexAllEntities)( int iEntIndex );
 } enginefuncs_t;
 // ONLY ADD NEW FUNCTIONS TO THE END OF THIS STRUCT.  INTERFACE VERSION IS FROZEN AT 138
 
@@ -366,7 +369,11 @@ typedef enum _fieldtypes
 } FIELDTYPE;
 
 #ifndef offsetof
-#define offsetof(s,m)	(size_t)&(((s *)0)->m)
+#ifdef __GNUC__
+#define offsetof(s,m) __builtin_offsetof(s,m)
+#else
+#define offsetof(s,m) (size_t)&(((s *)0)->m)
+#endif
 #endif
 
 #define _FIELD(type,name,fieldtype,count,flags)		{ fieldtype, #name, offsetof(type, name), count, flags }
@@ -384,7 +391,7 @@ typedef enum _fieldtypes
 typedef struct
 {
 	FIELDTYPE		fieldType;
-	char		*fieldName;
+	const char		*fieldName;
 	int		fieldOffset;
 	short		fieldSize;
 	short		flags;

@@ -234,7 +234,7 @@ void CL_InitCDAudio( const char *filename )
 	pfile = (char *)afile;
 
 	// format: trackname\n [num]
-	while(( pfile = COM_ParseFile( pfile, token )) != NULL )
+	while(( pfile = COM_ParseFile( pfile, token, sizeof( token ))) != NULL )
 	{
 		if( !Q_stricmp( token, "blank" )) token[0] = '\0';
 		Q_strncpy( clgame.cdtracks[c], token, sizeof( clgame.cdtracks[0] ));
@@ -966,29 +966,17 @@ static void CL_DrawLoadingOrPaused( qboolean paused, float percent )
 
 	SPR_AdjustSizei( &x, &y, &width, &height );
 
-	if( !paused && cl_allow_levelshots->value )
+	if( !paused )
 	{
-		float	step, s2;
-
-		ref.dllFuncs.Color4ub( 128, 128, 128, 255 );
+		ref.dllFuncs.Color4ub( 255, 255, 255, 255 );
 		ref.dllFuncs.GL_SetRenderMode( kRenderTransTexture );
 		ref.dllFuncs.R_DrawStretchPic( x, y, width, height, 0, 0, 1, 1, cls.loadingBar );
-
-		step = (float)width / 100.0f;
-		right = (int)ceil( percent * step );
-		s2 = (float)right / width;
-		width = right;
-
-		ref.dllFuncs.Color4ub( 208, 152, 0, 255 );
-		ref.dllFuncs.GL_SetRenderMode( kRenderTransTexture );
-		ref.dllFuncs.R_DrawStretchPic( x, y, width, height, 0, 0, s2, 1, cls.loadingBar );
-		ref.dllFuncs.Color4ub( 255, 255, 255, 255 );
 	}
 	else
 	{
 		ref.dllFuncs.Color4ub( 255, 255, 255, 255 );
 		ref.dllFuncs.GL_SetRenderMode( kRenderTransTexture );
-		ref.dllFuncs.R_DrawStretchPic( x, y, width, height, 0, 0, 1, 1, cls.loadingBar );
+		ref.dllFuncs.R_DrawStretchPic( x, y, width, height, 0, 0, 1, 1, cls.pauseIcon );
 	}
 }
 
@@ -1329,7 +1317,7 @@ pfnSPR_Load
 
 =========
 */
-HSPRITE GAME_EXPORT pfnSPR_Load( const char *szPicName )
+HSPRITE EXPORT pfnSPR_Load( const char *szPicName )
 {
 	model_t	*spr;
 
@@ -1376,7 +1364,7 @@ pfnSPR_Frames
 
 =========
 */
-static int GAME_EXPORT pfnSPR_Frames( HSPRITE hPic )
+int EXPORT pfnSPR_Frames( HSPRITE hPic )
 {
 	int	numFrames;
 
@@ -1535,7 +1523,7 @@ static client_sprite_t *pfnSPR_GetList( char *psz, int *piCount )
 	if( !afile ) return NULL;
 
 	pfile = (char *)afile;
-	pfile = COM_ParseFile( pfile, token );
+	pfile = COM_ParseFile( pfile, token, sizeof( token ));
 	numSprites = Q_atoi( token );
 
 	Q_strncpy( pEntry->szListName, psz, sizeof( pEntry->szListName ));
@@ -1545,30 +1533,30 @@ static client_sprite_t *pfnSPR_GetList( char *psz, int *piCount )
 
 	for( index = 0; index < numSprites; index++ )
 	{
-		if(( pfile = COM_ParseFile( pfile, token )) == NULL )
+		if(( pfile = COM_ParseFile( pfile, token, sizeof( token ))) == NULL )
 			break;
 
 		Q_strncpy( pEntry->pList[index].szName, token, sizeof( pEntry->pList[0].szName ));
 
 		// read resolution
-		pfile = COM_ParseFile( pfile, token );
+		pfile = COM_ParseFile( pfile, token, sizeof( token ));
 		pEntry->pList[index].iRes = Q_atoi( token );
 
 		// read spritename
-		pfile = COM_ParseFile( pfile, token );
+		pfile = COM_ParseFile( pfile, token, sizeof( token ));
 		Q_strncpy( pEntry->pList[index].szSprite, token, sizeof( pEntry->pList[0].szSprite ));
 
 		// parse rectangle
-		pfile = COM_ParseFile( pfile, token );
+		pfile = COM_ParseFile( pfile, token, sizeof( token ));
 		pEntry->pList[index].rc.left = Q_atoi( token );
 
-		pfile = COM_ParseFile( pfile, token );
+		pfile = COM_ParseFile( pfile, token, sizeof( token ));
 		pEntry->pList[index].rc.top = Q_atoi( token );
 
-		pfile = COM_ParseFile( pfile, token );
+		pfile = COM_ParseFile( pfile, token, sizeof( token ));
 		pEntry->pList[index].rc.right = pEntry->pList[index].rc.left + Q_atoi( token );
 
-		pfile = COM_ParseFile( pfile, token );
+		pfile = COM_ParseFile( pfile, token, sizeof( token ));
 		pEntry->pList[index].rc.bottom = pEntry->pList[index].rc.top + Q_atoi( token );
 
 		pEntry->count++;
@@ -1752,6 +1740,29 @@ static int GAME_EXPORT pfnClientCmd( const char *szCmdString )
 		// will exec later
 		Q_strncat( host.deferred_cmd, va( "%s\n", szCmdString ), sizeof( host.deferred_cmd ));
 	}
+
+	return 1;
+}
+
+/*
+=============
+pfnFilteredClientCmd
+=============
+*/
+static int GAME_EXPORT pfnFilteredClientCmd( const char *szCmdString )
+{
+	if( !COM_CheckString( szCmdString ))
+		return 0;
+
+	// a1ba:
+	// there should be stufftext validator, that checks
+	// hardcoded commands and disallows them before passing to
+	// filtered buffer, returning 0
+	// I've replaced it by hooking potentially exploitable
+	// commands and variables(motd_write, motdfile, etc) in client interfaces
+
+	Cbuf_AddFilteredText( szCmdString );
+	Cbuf_AddFilteredText( "\n" );
 
 	return 1;
 }
@@ -2288,9 +2299,9 @@ static void GAME_EXPORT pfnKillEvents( int entnum, const char *eventname )
 	int		i;
 	event_state_t	*es;
 	event_info_t	*ei;
-	int		eventIndex = CL_EventIndex( eventname );
+	word		eventIndex = CL_EventIndex( eventname );
 
-	if( eventIndex < 0 || eventIndex >= MAX_EVENTS )
+	if( eventIndex >= MAX_EVENTS )
 		return;
 
 	if( entnum < 0 || entnum > clgame.maxEntities )
@@ -2918,15 +2929,16 @@ pfnDrawString
 */
 static int GAME_EXPORT pfnDrawString( int x, int y, const char *str, int r, int g, int b )
 {
+	int iWidth = 0;
 	Con_UtfProcessChar(0);
 
 	// draw the string until we hit the null character or a newline character
 	for ( ; *str != 0 && *str != '\n'; str++ )
 	{
-		x += pfnVGUI2DrawCharacterAdditive( x, y, (unsigned char)*str, r, g, b, 0 );
+		iWidth += pfnVGUI2DrawCharacterAdditive( x + iWidth, y, (unsigned char)*str, r, g, b, 0 );
 	}
 
-	return x;
+	return iWidth;
 }
 
 /*
@@ -2941,8 +2953,7 @@ static int GAME_EXPORT pfnDrawStringReverse( int x, int y, const char *str, int 
 	char *szIt;
 	for( szIt = (char*)str; *szIt != 0; szIt++ )
 		x -= clgame.scrInfo.charWidths[ (unsigned char) *szIt ];
-	pfnDrawString( x, y, str, r, g, b );
-	return x;
+	return pfnDrawString( x, y, str, r, g, b );
 }
 
 /*
@@ -3078,9 +3089,7 @@ char *pfnParseFile( char *data, char *token )
 {
 	char	*out;
 
-	host.com_handlecolon = true;
-	out = COM_ParseFile( data, token );
-	host.com_handlecolon = false;
+	out = _COM_ParseFileSafe( data, token, PFILE_TOKEN_MAX_LENGTH, PFILE_HANDLECOLON, NULL );
 
 	return out;
 }
@@ -3169,16 +3178,7 @@ convert world coordinates (x,y,z) into screen (x, y)
 */
 int TriWorldToScreen( const float *world, float *screen )
 {
-	int	retval;
-
-	retval = ref.dllFuncs.WorldToScreen( world, screen );
-
-	screen[0] =  0.5f * screen[0] * (float)clgame.viewport[2];
-	screen[1] = -0.5f * screen[1] * (float)clgame.viewport[3];
-	screen[0] += 0.5f * (float)clgame.viewport[2];
-	screen[1] += 0.5f * (float)clgame.viewport[3];
-
-	return retval;
+	return ref.dllFuncs.WorldToScreen( world, screen );
 }
 
 /*
@@ -3492,7 +3492,7 @@ NetAPI_AdrToString
 
 =================
 */
-char *NetAPI_AdrToString( netadr_t *a )
+const char *NetAPI_AdrToString( netadr_t *a )
 {
 	return NET_AdrToString( *a );
 }
@@ -3892,10 +3892,7 @@ static cl_enginefunc_t gEngfuncs =
 	pfnGetAppID,
 	Cmd_AliasGetList,
 	pfnVguiWrap2_GetMouseDelta,
-
-	// HACKHACK: added it here so it wouldn't cause overflow or segfault
-	// TODO: itself client command filtering is not implemented yet
-	pfnClientCmd
+	pfnFilteredClientCmd
 };
 
 void CL_UnloadProgs( void )
@@ -3961,7 +3958,7 @@ qboolean CL_LoadProgs( const char *name )
 #else
 	// this doesn't mean other platforms uses SDL2 in any case
 	// it just helps input code to stay platform-independent
-	clgame.client_dll_uses_sdl = false;
+	clgame.client_dll_uses_sdl = true;
 #endif
 
 	clgame.hInstance = COM_LoadLibrary( name, false, false );
@@ -3978,7 +3975,17 @@ qboolean CL_LoadProgs( const char *name )
 
 		// trying to fill interface now
 		GetClientAPI( &clgame.dllFuncs );
+	}
+	else if(( GetClientAPI = (void *)COM_GetProcAddress( clgame.hInstance, "F" )) != NULL )
+	{
+		Con_Reportf( "CL_LoadProgs: found single callback export (secured client dlls)\n" );
 
+		// trying to fill interface now
+		CL_GetSecuredClientAPI( GetClientAPI );
+	}
+
+	if ( GetClientAPI != NULL )
+	{
 		// check critical functions again
 		for( func = cdll_exports; func && func->name; func++ )
 		{

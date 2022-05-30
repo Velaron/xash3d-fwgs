@@ -785,7 +785,7 @@ static void Mod_FindModelOrigin( const char *entities, const char *modelname, ve
 
 	pfile = (char *)entities;
 
-	while(( pfile = COM_ParseFile( pfile, token )) != NULL )
+	while(( pfile = COM_ParseFile( pfile, token, sizeof( token ))) != NULL )
 	{
 		if( token[0] != '{' )
 			Host_Error( "Mod_FindModelOrigin: found %s when expecting {\n", token );
@@ -796,14 +796,14 @@ static void Mod_FindModelOrigin( const char *entities, const char *modelname, ve
 		while( 1 )
 		{
 			// parse key
-			if(( pfile = COM_ParseFile( pfile, token )) == NULL )
+			if(( pfile = COM_ParseFile( pfile, token, sizeof( token ))) == NULL )
 				Host_Error( "Mod_FindModelOrigin: EOF without closing brace\n" );
 			if( token[0] == '}' ) break; // end of desc
 
 			Q_strncpy( keyname, token, sizeof( keyname ));
 
 			// parse value
-			if(( pfile = COM_ParseFile( pfile, token )) == NULL )
+			if(( pfile = COM_ParseFile( pfile, token, sizeof( token ))) == NULL )
 				Host_Error( "Mod_FindModelOrigin: EOF without closing brace\n" );
 
 			if( token[0] == '}' )
@@ -1020,6 +1020,8 @@ Fills in surf->texturemins[] and surf->extents[]
 */
 static void Mod_CalcSurfaceExtents( msurface_t *surf )
 {
+	// this place is VERY critical to precision
+	// keep it as float, don't use double, because it causes issues with lightmap
 	float		mins[2], maxs[2], val;
 	float		lmmins[2], lmmaxs[2];
 	int		bmins[2], bmaxs[2];
@@ -1049,14 +1051,14 @@ static void Mod_CalcSurfaceExtents( msurface_t *surf )
 
 		for( j = 0; j < 2; j++ )
 		{
-			val = DotProduct( v->position, surf->texinfo->vecs[j] ) + surf->texinfo->vecs[j][3];
+			val = DotProductPrecise( v->position, surf->texinfo->vecs[j] ) + surf->texinfo->vecs[j][3];
 			mins[j] = Q_min( val, mins[j] );
 			maxs[j] = Q_max( val, maxs[j] );
 		}
 
 		for( j = 0; j < 2; j++ )
 		{
-			val = DotProduct( v->position, info->lmvecs[j] ) + info->lmvecs[j][3];
+			val = DotProductPrecise( v->position, info->lmvecs[j] ) + info->lmvecs[j][3];
 			lmmins[j] = Q_min( val, lmmins[j] );
 			lmmaxs[j] = Q_max( val, lmmaxs[j] );
 		}
@@ -1679,7 +1681,7 @@ static void Mod_LoadEntities( dbspmodel_t *bmod )
 	bmod->wadlist.count = 0;
 
 	// parse all the wads for loading textures in right ordering
-	while(( pfile = COM_ParseFile( pfile, token )) != NULL )
+	while(( pfile = COM_ParseFile( pfile, token, sizeof( token ))) != NULL )
 	{
 		if( token[0] != '{' )
 			Host_Error( "Mod_LoadEntities: found %s when expecting {\n", token );
@@ -1687,14 +1689,14 @@ static void Mod_LoadEntities( dbspmodel_t *bmod )
 		while( 1 )
 		{
 			// parse key
-			if(( pfile = COM_ParseFile( pfile, token )) == NULL )
+			if(( pfile = COM_ParseFile( pfile, token, sizeof( token ))) == NULL )
 				Host_Error( "Mod_LoadEntities: EOF without closing brace\n" );
 			if( token[0] == '}' ) break; // end of desc
 
 			Q_strncpy( keyname, token, sizeof( keyname ));
 
 			// parse value
-			if(( pfile = COM_ParseFile( pfile, token )) == NULL )
+			if(( pfile = COM_ParseFile( pfile, token, sizeof( token ))) == NULL )
 				Host_Error( "Mod_LoadEntities: EOF without closing brace\n" );
 
 			if( token[0] == '}' )
@@ -2023,7 +2025,7 @@ static void Mod_LoadTextures( dbspmodel_t *bmod )
 
 					if( FS_FileExists( texpath, false ))
 					{
-						tx->gl_texturenum = ref.dllFuncs.GL_LoadTexture( texpath, NULL, 0, TF_ALLOW_EMBOSS|txFlags );
+						tx->gl_texturenum = ref.dllFuncs.GL_LoadTexture( texpath, NULL, 0, txFlags );
 						bmod->wadlist.wadusage[j]++; // this wad are really used
 						break;
 					}
@@ -2039,7 +2041,7 @@ static void Mod_LoadTextures( dbspmodel_t *bmod )
 
 				if( custom_palette ) size += sizeof( short ) + 768;
 				Q_snprintf( texname, sizeof( texname ), "#%s:%s.mip", loadstat.name, mt->name );
-				tx->gl_texturenum = ref.dllFuncs.GL_LoadTexture( texname, (byte *)mt, size, TF_ALLOW_EMBOSS|txFlags );
+				tx->gl_texturenum = ref.dllFuncs.GL_LoadTexture( texname, (byte *)mt, size, txFlags );
 			}
 
 			// if texture is completely missed
@@ -2736,6 +2738,37 @@ static void Mod_LoadLighting( dbspmodel_t *bmod )
 
 /*
 =================
+Mod_LumpLooksLikePlanes
+
+=================
+*/
+static qboolean Mod_LumpLooksLikePlanes( const byte *in, dlump_t *lump, qboolean fast )
+{
+	int numplanes, i;
+	const dplane_t *planes;
+
+	if( lump->filelen < sizeof( dplane_t ) &&
+		lump->filelen % sizeof( dplane_t ) != 0 )
+		return false;
+
+	if( fast )
+		return true;
+
+	numplanes = lump->filelen / sizeof( dplane_t );
+	planes = (const dplane_t*)(in + lump->fileofs);
+
+	for( i = 0; i < numplanes; i++ )
+	{
+		// planes can only be from 0 to 5: PLANE_X, Y, Z and PLANE_ANYX, Y and Z
+		if( planes[i].type < 0 || planes[i].type > 5 )
+			return false;
+	}
+
+	return true;
+}
+
+/*
+=================
 Mod_LoadBmodelLumps
 
 loading and processing bmodel
@@ -2780,13 +2813,28 @@ qboolean Mod_LoadBmodelLumps( const byte *mod_base, qboolean isworld )
 	if( isworld ) world.flags = 0;	// clear world settings
 	bmod->isworld = isworld;
 
-	if( header->version == HLBSP_VERSION &&
-		header->lumps[LUMP_ENTITIES].fileofs <= 1024 &&
-		(header->lumps[LUMP_ENTITIES].filelen % sizeof( dplane_t )) == 0 )
+	if( header->version == HLBSP_VERSION )
 	{
-		// blue-shift swapped lumps
-		srclumps[0].lumpnumber = LUMP_PLANES;
-		srclumps[1].lumpnumber = LUMP_ENTITIES;
+		// only relevant for half-life maps
+		if( !Mod_LumpLooksLikePlanes( mod_base, &header->lumps[LUMP_PLANES], false ) &&
+			Mod_LumpLooksLikePlanes( mod_base, &header->lumps[LUMP_ENTITIES], false ))
+		{
+			// blue-shift swapped lumps
+			srclumps[0].lumpnumber = LUMP_PLANES;
+			srclumps[1].lumpnumber = LUMP_ENTITIES;
+		}
+		else
+		{
+			// everything else
+			srclumps[0].lumpnumber = LUMP_ENTITIES;
+			srclumps[1].lumpnumber = LUMP_PLANES;
+		}
+	}
+	else
+	{
+		// everything else
+		srclumps[0].lumpnumber = LUMP_ENTITIES;
+		srclumps[1].lumpnumber = LUMP_PLANES;
 	}
 
 	// loading base lumps
@@ -2893,13 +2941,28 @@ qboolean Mod_TestBmodelLumps( const char *name, const byte *mod_base, qboolean s
 		break;
 	}
 
-	if( header->version == HLBSP_VERSION &&
-		header->lumps[LUMP_ENTITIES].fileofs <= 1024 &&
-		(header->lumps[LUMP_ENTITIES].filelen % sizeof( dplane_t )) == 0 )
+	if( header->version == HLBSP_VERSION )
 	{
-		// blue-shift swapped lumps
-		srclumps[0].lumpnumber = LUMP_PLANES;
-		srclumps[1].lumpnumber = LUMP_ENTITIES;
+		// only relevant for half-life maps
+		if( Mod_LumpLooksLikePlanes( mod_base, &header->lumps[LUMP_ENTITIES], true ) &&
+			 !Mod_LumpLooksLikePlanes( mod_base, &header->lumps[LUMP_PLANES], true ))
+		{
+			// blue-shift swapped lumps
+			srclumps[0].lumpnumber = LUMP_PLANES;
+			srclumps[1].lumpnumber = LUMP_ENTITIES;
+		}
+		else
+		{
+			// everything else
+			srclumps[0].lumpnumber = LUMP_ENTITIES;
+			srclumps[1].lumpnumber = LUMP_PLANES;
+		}
+	}
+	else
+	{
+		// everything else
+		srclumps[0].lumpnumber = LUMP_ENTITIES;
+		srclumps[1].lumpnumber = LUMP_PLANES;
 	}
 
 	// loading base lumps

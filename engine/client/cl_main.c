@@ -243,7 +243,7 @@ void CL_SignonReply( void )
 
 float CL_LerpInterval( void )
 {
-	return max( cl_interp->value, 1.f / cl_updaterate->value );
+	return Q_max( cl_interp->value, 1.f / cl_updaterate->value );
 }
 
 /*
@@ -296,7 +296,7 @@ static float CL_LerpPoint( void )
 	if( cl_interp->value > 0.001f )
 	{
 		// manual lerp value (goldsrc mode)
-		float td = max( 0.f, cl.time - cl.mtime[0] );
+		float td = Q_max( 0.f, cl.time - cl.mtime[0] );
 		frac = td / CL_LerpInterval();
 	}
 	else if( server_frametime > 0.001f )
@@ -528,7 +528,7 @@ qboolean CL_ProcessShowTexturesCmds( usercmd_t *cmd )
 	if( released & ( IN_RIGHT|IN_MOVERIGHT ))
 		Cvar_SetValue( "r_showtextures", gl_showtextures->value + 1 );
 	if( released & ( IN_LEFT|IN_MOVELEFT ))
-		Cvar_SetValue( "r_showtextures", max( 1, gl_showtextures->value - 1 ));
+		Cvar_SetValue( "r_showtextures", Q_max( 1, gl_showtextures->value - 1 ));
 	oldbuttons = cmd->buttons;
 
 	return true;
@@ -1287,6 +1287,7 @@ void CL_Rcon_f( void )
 {
 	char	message[1024];
 	netadr_t	to;
+	string command;
 	int	i;
 
 	if( !COM_CheckString( rcon_client_password->string ))
@@ -1309,7 +1310,8 @@ void CL_Rcon_f( void )
 
 	for( i = 1; i < Cmd_Argc(); i++ )
 	{
-		Q_strcat( message, Cmd_Argv( i ));
+		Cmd_Escape( command, Cmd_Argv( i ), sizeof( command ));
+		Q_strcat( message, command );
 		Q_strcat( message, " " );
 	}
 
@@ -1564,7 +1566,6 @@ void CL_LocalServers_f( void )
 
 	Con_Printf( "Scanning for servers on the local network area...\n" );
 	NET_Config( true ); // allow remote
-	cls.legacyservercount = 0;
 
 	// send a broadcast packet
 	adr.type = NA_BROADCAST;
@@ -1592,7 +1593,6 @@ void CL_InternetServers_f( void )
 	Info_SetValueForKey( info, "gamedir", GI->gamefolder, remaining );
 	Info_SetValueForKey( info, "clver", XASH_VERSION, remaining ); // let master know about client version
 	// Info_SetValueForKey( info, "nat", cl_nat->string, remaining );
-	cls.legacyservercount = 0;
 
 	cls.internetservers_wait = NET_SendToMasters( NS_CLIENT, sizeof( MS_SCAN_REQUEST ) + Q_strlen( info ), fullquery );
 	cls.internetservers_pending = true;
@@ -1723,8 +1723,6 @@ void CL_ParseStatusMessage( netadr_t from, sizebuf_t *msg )
 	{
 		Netchan_OutOfBandPrint( NS_CLIENT, from, "info %i", PROTOCOL_LEGACY_VERSION );
 		Con_Printf( "^1Server^7: %s, Info: %s\n", NET_AdrToString( from ), infostring );
-		if( cls.legacyservercount < MAX_LEGACY_SERVERS )
-			cls.legacyservers[cls.legacyservercount++] = from;
 		return;
 	}
 
@@ -1734,14 +1732,10 @@ void CL_ParseStatusMessage( netadr_t from, sizebuf_t *msg )
 		return; // unsupported proto
 	}
 
-	for( i = 0; i < cls.legacyservercount; i++ )
+	if( !COM_CheckString( Info_ValueForKey( infostring, "p" )))
 	{
-		if( NET_CompareAdr( cls.legacyservers[i], from ) )
-		{
-			Info_SetValueForKey( infostring, "legacy", "1", sizeof( infostring ) );
-			Con_Print("Legacy: ");
-			break;
-		}
+		Info_SetValueForKey( infostring, "legacy", "1", sizeof( infostring ) );
+		Con_Print("Legacy: ");
 	}
 
 	// more info about servers
@@ -2354,11 +2348,10 @@ Replace the displayed name for some resources
 */
 const char *CL_CleanFileName( const char *filename )
 {
-	const char	*pfilename = filename;
-
 	if( COM_CheckString( filename ) && filename[0] == '!' )
-		pfilename = "customization";
-	return pfilename;
+		return "customization";
+
+	return filename;
 }
 
 
@@ -2538,7 +2531,7 @@ CL_ServerCommand
 send command to a server
 ====================
 */
-void CL_ServerCommand( qboolean reliable, char *fmt, ... )
+void CL_ServerCommand( qboolean reliable, const char *fmt, ... )
 {
 	char		string[MAX_SYSPATH];
 	va_list		argptr;
@@ -2825,13 +2818,13 @@ void CL_InitLocal( void )
 	cl_nodelta = Cvar_Get ("cl_nodelta", "0", 0, "disable delta-compression for server messages" );
 	cl_idealpitchscale = Cvar_Get( "cl_idealpitchscale", "0.8", 0, "how much to look up/down slopes and stairs when not using freelook" );
 	cl_solid_players = Cvar_Get( "cl_solid_players", "1", 0, "Make all players not solid (can't traceline them)" );
-	cl_interp = Cvar_Get( "ex_interp", "0.1", FCVAR_ARCHIVE, "Interpolate object positions starting this many seconds in past" );
+	cl_interp = Cvar_Get( "ex_interp", "0.1", FCVAR_ARCHIVE | FCVAR_FILTERABLE, "Interpolate object positions starting this many seconds in past" );
 	cl_timeout = Cvar_Get( "cl_timeout", "60", 0, "connect timeout (in-seconds)" );
 	cl_charset = Cvar_Get( "cl_charset", "utf-8", FCVAR_ARCHIVE, "1-byte charset to use (iconv style)" );
 	hud_utf8 = Cvar_Get( "hud_utf8", "0", FCVAR_ARCHIVE, "Use utf-8 encoding for hud text" );
 
-	rcon_client_password = Cvar_Get( "rcon_password", "", 0, "remote control client password" );
-	rcon_address = Cvar_Get( "rcon_address", "", 0, "remote control address" );
+	rcon_client_password = Cvar_Get( "rcon_password", "", FCVAR_PRIVILEGED, "remote control client password" );
+	rcon_address = Cvar_Get( "rcon_address", "", FCVAR_PRIVILEGED, "remote control address" );
 
 	cl_trace_messages = Cvar_Get( "cl_trace_messages", "0", FCVAR_ARCHIVE|FCVAR_CHEAT, "enable message names tracing (good for developers)");
 
@@ -2842,7 +2835,7 @@ void CL_InitLocal( void )
 	cl_updaterate = Cvar_Get( "cl_updaterate", "20", FCVAR_USERINFO|FCVAR_ARCHIVE, "refresh rate of server messages" );
 	cl_dlmax = Cvar_Get( "cl_dlmax", "0", FCVAR_USERINFO|FCVAR_ARCHIVE, "max allowed outcoming fragment size" );
 	cl_upmax = Cvar_Get( "cl_upmax", "1200", FCVAR_ARCHIVE, "max allowed incoming fragment size" );
-	rate = Cvar_Get( "rate", "3500", FCVAR_USERINFO|FCVAR_ARCHIVE, "player network rate" );
+	rate = Cvar_Get( "rate", "3500", FCVAR_USERINFO|FCVAR_ARCHIVE|FCVAR_FILTERABLE, "player network rate" );
 	topcolor = Cvar_Get( "topcolor", "0", FCVAR_USERINFO|FCVAR_ARCHIVE, "player top color" );
 	bottomcolor = Cvar_Get( "bottomcolor", "0", FCVAR_USERINFO|FCVAR_ARCHIVE, "player bottom color" );
 	cl_lw = Cvar_Get( "cl_lw", "1", FCVAR_ARCHIVE|FCVAR_USERINFO, "enable client weapon predicting" );
@@ -2881,7 +2874,7 @@ void CL_InitLocal( void )
 	Cmd_AddCommand ("give", NULL, "give specified item or weapon" );
 	Cmd_AddCommand ("drop", NULL, "drop current/specified item or weapon" );
 	Cmd_AddCommand ("gametitle", NULL, "show game logo" );
-	Cmd_AddCommand( "kill", NULL, "die instantly" );
+	Cmd_AddRestrictedCommand ("kill", NULL, "die instantly" );
 	Cmd_AddCommand ("god", NULL, "enable godmode" );
 	Cmd_AddCommand ("fov", NULL, "set client field of view" );
 	Cmd_AddCommand ("log", NULL, "logging server events" );
@@ -2894,8 +2887,8 @@ void CL_InitLocal( void )
 	Cmd_AddCommand ("mp3", CL_PlayCDTrack_f, "Play mp3-track (based on virtual cd-player)" );
 	Cmd_AddCommand ("waveplaylen", CL_WavePlayLen_f, "Get approximate length of wave file");
 
-	Cmd_AddCommand ("setinfo", CL_SetInfo_f, "examine or change the userinfo string (alias of userinfo)" );
-	Cmd_AddCommand ("userinfo", CL_SetInfo_f, "examine or change the userinfo string (alias of setinfo)" );
+	Cmd_AddRestrictedCommand ("setinfo", CL_SetInfo_f, "examine or change the userinfo string (alias of userinfo)" );
+	Cmd_AddRestrictedCommand ("userinfo", CL_SetInfo_f, "examine or change the userinfo string (alias of setinfo)" );
 	Cmd_AddCommand ("physinfo", CL_Physinfo_f, "print current client physinfo" );
 	Cmd_AddCommand ("disconnect", CL_Disconnect_f, "disconnect from server" );
 	Cmd_AddCommand ("record", CL_Record_f, "record a demo" );
@@ -2914,8 +2907,8 @@ void CL_InitLocal( void )
 	Cmd_AddCommand ("fullserverinfo", CL_FullServerinfo_f, "sent by server when serverinfo changes" );
 	Cmd_AddCommand ("upload", CL_BeginUpload_f, "uploading file to the server" );
 
-	Cmd_AddCommand ("quit", CL_Quit_f, "quit from game" );
-	Cmd_AddCommand ("exit", CL_Quit_f, "quit from game" );
+	Cmd_AddRestrictedCommand ("quit", CL_Quit_f, "quit from game" );
+	Cmd_AddRestrictedCommand ("exit", CL_Quit_f, "quit from game" );
 
 	Cmd_AddCommand ("screenshot", CL_ScreenShot_f, "takes a screenshot of the next rendered frame" );
 	Cmd_AddCommand ("snapshot", CL_SnapShot_f, "takes a snapshot of the next rendered frame" );
@@ -3082,7 +3075,6 @@ void CL_Init( void )
 	MSG_Init( &cls.datagram, "cls.datagram", cls.datagram_buf, sizeof( cls.datagram_buf ));
 
 	// IN_TouchInit();
-	Con_LoadHistory();
 
 	COM_GetCommonLibraryPath( LIBRARY_CLIENT, libpath, sizeof( libpath ));
 

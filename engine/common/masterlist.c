@@ -189,11 +189,11 @@ static void NET_LoadMasters( void )
 	pfile = (char*)afile;
 
 	// format: master <addr>\n
-	while( ( pfile = COM_ParseFile( pfile, token ) ) )
+	while( ( pfile = COM_ParseFile( pfile, token, sizeof( token ) ) ) )
 	{
 		if( !Q_strcmp( token, "master" ) ) // load addr
 		{
-			pfile = COM_ParseFile( pfile, token );
+			pfile = COM_ParseFile( pfile, token, sizeof( token ) );
 
 			NET_AddMaster( token, true );
 		}
@@ -254,6 +254,5 @@ void NET_InitMasters( void )
 
 	// keep main master always there
 	NET_AddMaster( MASTERSERVER_ADR, false );
-	NET_AddMaster( MASTERSERVER_ADR2, false );
 	NET_LoadMasters( );
 }

@@ -183,8 +183,18 @@ void SCR_NetSpeeds( void )
 		if( cur_clfps > max_clfps ) max_clfps = cur_clfps;
 	}
 
-	Q_snprintf( msg, sizeof( msg ), "sv fps: ^1%4i min, ^3%4i cur, ^2%4i max\ncl fps: ^1%4i min, ^3%4i cur, ^2%4i max\nGame Time: %02d:%02d\nTotal received from server: %s\nTotal sent to server: %s\n",
-	min_svfps, cur_svfps, max_svfps, min_clfps, cur_clfps, max_clfps, (int)(time / 60.0f ), (int)fmod( time, 60.0f ), Q_memprint( cls.netchan.total_received ), Q_memprint( cls.netchan.total_sended ));
+	Q_snprintf( msg, sizeof( msg ),
+		"Updaterate: ^1%2i min, ^3%2i cur, ^2%2i max\n"
+		"Client FPS: ^1%i min, ^3%3i cur, ^2%3i max\n"
+		"Game Time: %02d:%02d\n"
+		"Total received from server: %s\n"
+		"Total sent to server: %s\n",
+		min_svfps, cur_svfps, max_svfps,
+		min_clfps, cur_clfps, max_clfps,
+		(int)(time / 60.0f ), (int)fmod( time, 60.0f ),
+		Q_memprint( cls.netchan.total_received ),
+		Q_memprint( cls.netchan.total_sended )
+	);
 
 	x = refState.width - 320;
 	y = 384;
@@ -771,6 +781,7 @@ SCR_VidInit
 */
 void SCR_VidInit( void )
 {
+	string libpath;
 	if( !ref.initialized ) // don't call VidInit too soon
 		return;
 
@@ -785,7 +796,8 @@ void SCR_VidInit( void )
 		gameui.globals->scrHeight = refState.height;
 	}
 
-	VGui_Startup( NULL, refState.width, refState.height ); // initialized already, so pass NULL
+	COM_GetCommonLibraryPath( LIBRARY_CLIENT, libpath, sizeof( libpath ));
+	VGui_Startup( libpath, refState.width, refState.height );
 
 	CL_ClearSpriteTextures(); // now all hud sprites are invalid
 

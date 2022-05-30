@@ -809,7 +809,7 @@ void S_MixBufferUpsample2x( int count, portable_samplepair_t *pbuffer, portable_
 // zero out all paintbuffers
 void MIX_ClearAllPaintBuffers( int SampleCount, qboolean clearFilters )
 {
-	int	count = min( SampleCount, PAINTBUFFER_SIZE );
+	int	count = Q_min( SampleCount, PAINTBUFFER_SIZE );
 	int	i;
 
 	// zero out all paintbuffer data (ignore sampleCount)
@@ -991,6 +991,7 @@ void MIX_UpsampleAllPaintbuffers( int end, int count )
 	// mix 11khz sounds:
 	MIX_MixChannelsToPaintbuffer( end, SOUND_11k, SOUND_11k );
 
+#if SOUND_DMA_SPEED >= SOUND_22k
 	// upsample all 11khz buffers by 2x
 	// only upsample roombuffer if dsp fx are on KDB: perf
 	MIX_SetCurrentPaintbuffer( IROOMBUFFER ); // operates on MixUpSample
@@ -998,7 +999,9 @@ void MIX_UpsampleAllPaintbuffers( int end, int count )
 
 	// mix 22khz sounds:
 	MIX_MixChannelsToPaintbuffer( end, SOUND_22k, SOUND_22k );
+#endif
 
+#if SOUND_DMA_SPEED >= SOUND_44k
 	// upsample all 22khz buffers by 2x
 	// only upsample roombuffer if dsp fx are on KDB: perf
 	MIX_SetCurrentPaintbuffer( IROOMBUFFER );
@@ -1006,6 +1009,7 @@ void MIX_UpsampleAllPaintbuffers( int end, int count )
 
 	// mix all 44khz sounds to all active paintbuffers
 	MIX_MixChannelsToPaintbuffer( end, SOUND_44k, SOUND_DMA_SPEED );
+#endif
 
 	// mix raw samples from the video streams
 	MIX_SetCurrentPaintbuffer( IROOMBUFFER );

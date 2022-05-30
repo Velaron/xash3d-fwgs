@@ -184,6 +184,8 @@ extern convar_t	host_developer;
 extern convar_t	*host_limitlocal;
 extern convar_t	*host_framerate;
 extern convar_t	*host_maxfps;
+extern convar_t	sys_timescale;
+extern convar_t	cl_filterstuffcmd;
 
 /*
 ==============================================================
@@ -229,6 +231,7 @@ typedef struct gameinfo_s
 	qboolean		secure;		// prevent to console acess
 	qboolean		nomodels;		// don't let player to choose model (use player.mdl always)
 	qboolean		noskills;		// disable skill menu selection
+	qboolean		render_picbutton_text; // use font renderer to render WON buttons
 
 	char		sp_entity[32];	// e.g. info_player_start
 	char		mp_entity[32];	// e.g. info_player_deathmatch
@@ -422,8 +425,6 @@ typedef struct host_parm_s
 	qboolean		stuffcmds_pending;	// should execute stuff commands
 	qboolean		allow_cheats;	// this host will allow cheating
 	qboolean		con_showalways;	// show console always (developer and dedicated)
-	qboolean		com_handlecolon;	// allow COM_ParseFile to handle colon as single char
-	qboolean		com_ignorebracket;	// allow COM_ParseFile to ignore () as single char
 	qboolean		change_game;	// initialize when game is changed
 	qboolean		mouse_visible;	// vgui override cursor control
 	qboolean		shutdown_issued;	// engine is shutting down
@@ -466,8 +467,9 @@ extern sysinfo_t	SI;
 #define CMD_SERVERDLL	BIT( 0 )		// added by server.dll
 #define CMD_CLIENTDLL	BIT( 1 )		// added by client.dll
 #define CMD_GAMEUIDLL	BIT( 2 )		// added by GameUI.dll
-#define CMD_LOCALONLY	BIT( 3 )		// restricted from server commands
-#define CMD_REFDLL	BIT( 4 )		// added by ref.dll
+#define CMD_PRIVILEGED	BIT( 3 )		// only available in privileged mode
+#define CMD_FILTERABLE  BIT( 4 )		// filtered in unprivileged mode if cl_filterstuffcmd is 1
+#define CMD_REFDLL	BIT( 5 )		// added by ref.dll
 
 typedef void (*xcommand_t)( void );
 
@@ -477,9 +479,11 @@ typedef void (*xcommand_t)( void );
 void Cbuf_Init( void );
 void Cbuf_Clear( void );
 void Cbuf_AddText( const char *text );
+void Cbuf_AddFilteredText( const char *text );
 void Cbuf_InsertText( const char *text );
 void Cbuf_ExecStuffCmds( void );
 void Cbuf_Execute (void);
+qboolean Cmd_CurrentCommandIsPrivileged( void );
 int Cmd_Argc( void );
 const char *Cmd_Args( void );
 const char *Cmd_Argv( int arg );
@@ -494,12 +498,14 @@ int Cmd_AddRefCommand( const char *cmd_name, xcommand_t function, const char *de
 void Cmd_RemoveCommand( const char *cmd_name );
 qboolean Cmd_Exists( const char *cmd_name );
 void Cmd_LookupCmds( void *buffer, void *ptr, setpair_t callback );
+int Cmd_ListMaps( search_t *t , char *lastmapname, size_t len );
 qboolean Cmd_GetMapList( const char *s, char *completedname, int length );
 qboolean Cmd_GetDemoList( const char *s, char *completedname, int length );
 qboolean Cmd_GetMovieList( const char *s, char *completedname, int length );
-void Cmd_TokenizeString( char *text );
-void Cmd_ExecuteString( char *text );
+void Cmd_TokenizeString( const char *text );
+void Cmd_ExecuteString( const char *text );
 void Cmd_ForwardToServer( void );
+void Cmd_Escape( char *newCommand, const char *oldCommand, int len );
 
 //
 // zone.c
@@ -565,6 +571,7 @@ int FS_FileTime( const char *filename, qboolean gamedironly );
 int FS_Print( file_t *file, const char *msg );
 qboolean FS_Rename( const char *oldname, const char *newname );
 int FS_FileExists( const char *filename, int gamedironly );
+int FS_SetCurrentDirectory( const char *path );
 qboolean FS_SysFileExists( const char *path, qboolean casesensitive );
 qboolean FS_FileCopy( file_t *pOutput, file_t *pInput, int fileSize );
 qboolean FS_Delete( const char *path );
@@ -580,6 +587,7 @@ fs_offset_t FS_FileLength( file_t *f );
 //
 #include "com_image.h"
 
+void Image_Setup( void );
 void Image_Init( void );
 void Image_Shutdown( void );
 void Image_AddCmdFlags( uint flags );
@@ -588,7 +596,7 @@ qboolean FS_SaveImage( const char *filename, rgbdata_t *pix );
 rgbdata_t *FS_CopyImage( rgbdata_t *in );
 void FS_FreeImage( rgbdata_t *pack );
 extern const bpc_desc_t PFDesc[];	// image get pixelformat
-qboolean Image_Process( rgbdata_t **pix, int width, int height, uint flags, float bumpscale );
+qboolean Image_Process( rgbdata_t **pix, int width, int height, uint flags, float reserved );
 void Image_PaletteHueReplace( byte *palSrc, int newHue, int start, int end, int pal_size );
 void Image_PaletteTranslate( byte *palSrc, int top, int bottom, int pal_size );
 void Image_SetForceFlags( uint flags );	// set image force flags on loading
@@ -683,7 +691,7 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
 int Host_CompareFileTime( int ft1, int ft2 );
 void Host_NewInstance( const char *name, const char *finalmsg );
 void Host_EndGame( qboolean abort, const char *message, ... ) _format( 2 );
-void Host_AbortCurrentFrame( void );
+void Host_AbortCurrentFrame( void ) NORETURN;
 void Host_WriteServerConfig( const char *name );
 void Host_WriteOpenGLConfig( void );
 void Host_WriteVideoConfig( void );
@@ -691,7 +699,7 @@ void Host_WriteConfig( void );
 qboolean Host_IsLocalGame( void );
 qboolean Host_IsLocalClient( void );
 void Host_ShutdownServer( void );
-void Host_Error( const char *error, ... ) _format( 1 );
+void Host_Error( const char *error, ... ) _format( 1 ) NORETURN;
 void Host_PrintEngineFeatures( void );
 void Host_Frame( float time );
 void Host_InitDecals( void );
@@ -748,7 +756,6 @@ void pfnDrawSetTextColor( float r, float g, float b );
 void pfnDrawConsoleStringLen( const char *pText, int *length, int *height );
 void *Cache_Check( poolhandle_t mempool, struct cache_user_s *c );
 void COM_TrimSpace( const char *source, char *dest );
-edict_t* pfnPEntityOfEntIndex( int iEntIndex );
 void pfnGetModelBounds( model_t *mod, float *mins, float *maxs );
 void pfnCVarDirectSet( cvar_t *var, const char *szValue );
 int COM_CheckParm( char *parm, char **ppnext );
@@ -851,7 +858,6 @@ void CL_LegacyUpdateInfo( void );
 void CL_CharEvent( int key );
 qboolean CL_DisableVisibility( void );
 int CL_PointContents( const vec3_t point );
-char *COM_ParseFile( char *data, char *token );
 byte *COM_LoadFile( const char *filename, int usehunk, int *pLength );
 int CL_GetDemoComment( const char *demoname, char *comment );
 void COM_AddAppDirectoryToSearchPath( const char *pszBaseDir, const char *appName );
@@ -867,14 +873,14 @@ void SV_CreateDecal( sizebuf_t *msg, const float *origin, int decalIndex, int en
 void Log_Printf( const char *fmt, ... ) _format( 1 );
 void SV_BroadcastCommand( const char *fmt, ... ) _format( 1 );
 qboolean SV_RestoreCustomDecal( struct decallist_s *entry, edict_t *pEdict, qboolean adjacent );
-void SV_BroadcastPrintf( struct sv_client_s *ignore, char *fmt, ... ) _format( 2 );
+void SV_BroadcastPrintf( struct sv_client_s *ignore, const char *fmt, ... ) _format( 2 );
 int R_CreateDecalList( struct decallist_s *pList );
 void R_ClearAllDecals( void );
 void CL_ClearStaticEntities( void );
 qboolean S_StreamGetCurrentState( char *currentTrack, char *loopTrack, int *position );
 struct cl_entity_s *CL_GetEntityByIndex( int index );
 struct player_info_s *CL_GetPlayerInfo( int playerIndex );
-void CL_ServerCommand( qboolean reliable, char *fmt, ... ) _format( 2 );
+void CL_ServerCommand( qboolean reliable, const char *fmt, ... ) _format( 2 );
 void CL_HudMessage( const char *pMessage );
 const char *CL_MsgInfo( int cmd );
 void SV_DrawDebugTriangles( void );

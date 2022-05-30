@@ -1,0 +1,72 @@
+name: Build & Deploy Engine
+on: [push, pull_request]
+jobs:
+#  cleanup:
+#    runs-on: self-hosted
+#    steps:
+#    - name: Cleanup
+#      run: rm -rf .* || true
+  build:
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-18.04
+            targetos: linux
+            targetarch: amd64
+          - os: ubuntu-18.04
+            targetos: linux
+            targetarch: i386
+#          - os: ubuntu-aarch64-20.04
+#            targetos: linux
+#            targetarch: aarch64
+
+          - os: ubuntu-18.04
+            targetos: android
+            targetarch: 32
+          - os: ubuntu-18.04
+            targetos: android
+            targetarch: 64
+
+          - os: ubuntu-18.04
+            targetos: motomagx
+            targetarch: armv6
+
+          - os: windows-latest
+            targetos: win32
+            targetarch: amd64
+          - os: windows-latest
+            targetos: win32
+            targetarch: i386
+    env:
+      SDL_VERSION: 2.0.14
+      GH_CPU_ARCH: ${{ matrix.targetarch }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ANDROID_SDK_TOOLS_VER: 4333796
+      UPLOADTOOL_ISPRERELEASE: true
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+      with:
+        submodules: recursive
+    - name: Checkout xash-extras
+      uses: actions/checkout@v2
+      with:
+        repository: FWGS/xash-extras
+        path: xash-extras
+
+    - name: Install dependencies
+      run: bash scripts/gha/deps_${{ matrix.targetos }}.sh
+
+    - name: Build engine
+      run: bash scripts/gha/build_${{ matrix.targetos }}.sh
+
+    - name: Upload engine (prereleases)
+      run: bash scripts/continious_upload.sh artifacts/*
+    - name: Upload engine (artifacts)
+      uses: actions/upload-artifact@v2
+      with:
+        name: artifact-${{ matrix.targetos }}-${{ matrix.targetarch }}
+        path: artifacts/*

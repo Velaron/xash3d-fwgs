@@ -15,9 +15,9 @@ GNU General Public License for more details.
 
 #include "common.h"
 
-static char *date = __DATE__ ;
-static char *mon[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
-static char mond[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+static const char *date = __DATE__ ;
+static const char *mon[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+static const char mond[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
 
 // returns days since Apr 1 2015
 int Q_buildnum( void )
@@ -104,9 +104,9 @@ const char *Q_buildos( void )
 
 /*
 ============
-Q_buildos
+Q_buildarch
 
-Returns current name of operating system. Without any spaces.
+Returns current name of the architecture. Without any spaces.
 ============
 */
 const char *Q_buildarch( void )
@@ -134,14 +134,33 @@ const char *Q_buildarch( void )
 	#endif
 
 	#if XASH_ARM_HARDFP
-		"hf";
+		"hf"
 	#else
-		"l";
+		"l"
 	#endif
+	;
 #elif XASH_MIPS && XASH_BIG_ENDIAN
-	archname = "mips";
-#elif XASH_MIPS && XASH_LITTLE_ENDIAN
-	archname = "mipsel";
+	archname = "mips"
+	#if XASH_64BIT
+		"64"
+	#endif
+	#if XASH_LITTLE_ENDIAN
+		"el"
+	#endif
+	;
+#elif XASH_RISCV
+	archname = "riscv"
+	#if XASH_64BIT
+		"64"
+	#else
+		"32"
+	#endif
+	#if XASH_RISCV_SINGLEFP
+		"d"
+	#elif XASH_RISCV_DOUBLEFP
+		"f"
+	#endif
+	;
 #elif XASH_JS
 	archname = "javascript";
 #elif XASH_E2K

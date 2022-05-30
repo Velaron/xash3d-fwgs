@@ -536,7 +536,7 @@ static int NET_StringToSockaddr( const char *s, struct sockaddr *sadr, qboolean 
 NET_AdrToString
 ====================
 */
-char *NET_AdrToString( const netadr_t a )
+const char *NET_AdrToString( const netadr_t a )
 {
 	if( a.type == NA_LOOPBACK )
 		return "loopback";
@@ -548,7 +548,7 @@ char *NET_AdrToString( const netadr_t a )
 NET_BaseAdrToString
 ====================
 */
-char *NET_BaseAdrToString( const netadr_t a )
+const char *NET_BaseAdrToString( const netadr_t a )
 {
 	if( a.type == NA_LOOPBACK )
 		return "loopback";
@@ -1382,10 +1382,10 @@ qboolean NET_BufferToBufferDecompress( byte *dest, uint *destLen, byte *source, 
 
 /*
 ====================
-NET_Isocket
+NET_IPSocket
 ====================
 */
-static int NET_Isocket( const char *net_interface, int port, qboolean multicast )
+static int NET_IPSocket( const char *net_interface, int port, qboolean multicast )
 {
 	struct sockaddr_in	addr;
 	int		err, net_socket;
@@ -1396,7 +1396,7 @@ static int NET_Isocket( const char *net_interface, int port, qboolean multicast 
 	{
 		err = WSAGetLastError();
 		if( err != WSAEAFNOSUPPORT )
-			Con_DPrintf( S_WARN "NET_UDsocket: port: %d socket: %s\n", port, NET_ErrorString( ));
+			Con_DPrintf( S_WARN "NET_UDPSocket: port: %d socket: %s\n", port, NET_ErrorString( ));
 		return INVALID_SOCKET;
 	}
 
@@ -1404,7 +1404,7 @@ static int NET_Isocket( const char *net_interface, int port, qboolean multicast 
 	{
 		struct timeval timeout;
 
-		Con_DPrintf( S_WARN "NET_UDsocket: port: %d ioctl FIONBIO: %s\n", port, NET_ErrorString( ));
+		Con_DPrintf( S_WARN "NET_UDPSocket: port: %d ioctl FIONBIO: %s\n", port, NET_ErrorString( ));
 		// try timeout instead of NBIO
 		timeout.tv_sec = timeout.tv_usec = 0;
 		setsockopt( net_socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
@@ -1413,14 +1413,14 @@ static int NET_Isocket( const char *net_interface, int port, qboolean multicast 
 	// make it broadcast capable
 	if( NET_IsSocketError( setsockopt( net_socket, SOL_SOCKET, SO_BROADCAST, (char *)&_true, sizeof( _true ) ) ) )
 	{
-		Con_DPrintf( S_WARN "NET_UDsocket: port: %d setsockopt SO_BROADCAST: %s\n", port, NET_ErrorString( ));
+		Con_DPrintf( S_WARN "NET_UDPSocket: port: %d setsockopt SO_BROADCAST: %s\n", port, NET_ErrorString( ));
 	}
 
 	if( Sys_CheckParm( "-reuse" ) || multicast )
 	{
 		if( NET_IsSocketError( setsockopt( net_socket, SOL_SOCKET, SO_REUSEADDR, (const char *)&optval, sizeof( optval )) ) )
 		{
-			Con_DPrintf( S_WARN "NET_UDsocket: port: %d setsockopt SO_REUSEADDR: %s\n", port, NET_ErrorString( ));
+			Con_DPrintf( S_WARN "NET_UDPSocket: port: %d setsockopt SO_REUSEADDR: %s\n", port, NET_ErrorString( ));
 			closesocket( net_socket );
 			return INVALID_SOCKET;
 		}
@@ -1435,7 +1435,7 @@ static int NET_Isocket( const char *net_interface, int port, qboolean multicast 
 		{
 			err = WSAGetLastError();
 			if( err != WSAENOPROTOOPT )
-				Con_Printf( S_WARN "NET_UDsocket: port: %d  setsockopt IP_TOS: %s\n", port, NET_ErrorString( ));
+				Con_Printf( S_WARN "NET_UDPSocket: port: %d  setsockopt IP_TOS: %s\n", port, NET_ErrorString( ));
 			closesocket( net_socket );
 			return INVALID_SOCKET;
 		}
@@ -1452,7 +1452,7 @@ static int NET_Isocket( const char *net_interface, int port, qboolean multicast 
 
 	if( NET_IsSocketError( bind( net_socket, (void *)&addr, sizeof( addr )) ) )
 	{
-		Con_DPrintf( S_WARN "NET_UDsocket: port: %d bind: %s\n", port, NET_ErrorString( ));
+		Con_DPrintf( S_WARN "NET_UDPSocket: port: %d bind: %s\n", port, NET_ErrorString( ));
 		closesocket( net_socket );
 		return INVALID_SOCKET;
 	}
@@ -1461,7 +1461,7 @@ static int NET_Isocket( const char *net_interface, int port, qboolean multicast 
 	{
 		optval = 1;
 		if( NET_IsSocketError( setsockopt( net_socket, IPPROTO_IP, IP_MULTICAST_LOOP, (const char *)&optval, sizeof( optval )) ) )
-			Con_DPrintf( S_WARN "NET_UDsocket: port %d setsockopt IP_MULTICAST_LOOP: %s\n", port, NET_ErrorString( ));
+			Con_DPrintf( S_WARN "NET_UDPSocket: port %d setsockopt IP_MULTICAST_LOOP: %s\n", port, NET_ErrorString( ));
 	}
 
 	return net_socket;
@@ -1481,7 +1481,7 @@ static void NET_OpenIP( void )
 		port = net_iphostport->value;
 		if( !port ) port = net_hostport->value;
 		if( !port ) port = PORT_SERVER; // forcing to default
-		net.ip_sockets[NS_SERVER] = NET_Isocket( net_ipname->string, port, false );
+		net.ip_sockets[NS_SERVER] = NET_IPSocket( net_ipname->string, port, false );
 
 		if( !NET_IsSocketValid( net.ip_sockets[NS_SERVER] ) && Host_IsDedicated() )
 			Host_Error( "Couldn't allocate dedicated server IP port %d.\n", port );
@@ -1496,10 +1496,10 @@ static void NET_OpenIP( void )
 		port = net_ipclientport->value;
 		if( !port ) port = net_clientport->value;
 		if( !port ) port = PORT_ANY; // forcing to default
-		net.ip_sockets[NS_CLIENT] = NET_Isocket( net_ipname->string, port, false );
+		net.ip_sockets[NS_CLIENT] = NET_IPSocket( net_ipname->string, port, false );
 
 		if( !NET_IsSocketValid( net.ip_sockets[NS_CLIENT] ) )
-			net.ip_sockets[NS_CLIENT] = NET_Isocket( net_ipname->string, PORT_ANY, false );
+			net.ip_sockets[NS_CLIENT] = NET_IPSocket( net_ipname->string, PORT_ANY, false );
 		cl_port = port;
 	}
 }
@@ -1693,15 +1693,15 @@ void NET_Init( void )
 
 	if( net.initialized ) return;
 
-	net_clockwindow = Cvar_Get( "clockwindow", "0.5", 0, "timewindow to execute client moves" );
+	net_clockwindow = Cvar_Get( "clockwindow", "0.5", FCVAR_PRIVILEGED, "timewindow to execute client moves" );
 	net_address = Cvar_Get( "net_address", "0", FCVAR_READ_ONLY, "contain local address of current client" );
 	net_ipname = Cvar_Get( "ip", "localhost", FCVAR_READ_ONLY, "network ip address" );
 	net_iphostport = Cvar_Get( "ip_hostport", "0", FCVAR_READ_ONLY, "network ip host port" );
 	net_hostport = Cvar_Get( "hostport", va( "%i", PORT_SERVER ), FCVAR_READ_ONLY, "network default host port" );
 	net_ipclientport = Cvar_Get( "ip_clientport", "0", FCVAR_READ_ONLY, "network ip client port" );
 	net_clientport = Cvar_Get( "clientport", va( "%i", PORT_CLIENT ), FCVAR_READ_ONLY, "network default client port" );
-	net_fakelag = Cvar_Get( "fakelag", "0", 0, "lag all incoming network data (including loopback) by xxx ms." );
-	net_fakeloss = Cvar_Get( "fakeloss", "0", 0, "act like we dropped the packet this % of the time." );
+	net_fakelag = Cvar_Get( "fakelag", "0", FCVAR_PRIVILEGED, "lag all incoming network data (including loopback) by xxx ms." );
+	net_fakeloss = Cvar_Get( "fakeloss", "0", FCVAR_PRIVILEGED, "act like we dropped the packet this % of the time." );
 
 	// prepare some network data
 	for( i = 0; i < NS_COUNT; i++ )
@@ -2543,10 +2543,10 @@ void HTTP_Init( void )
 
 	http.first_file = http.last_file = NULL;
 
-	Cmd_AddCommand("http_download", &HTTP_Download_f, "add file to download queue");
-	Cmd_AddCommand("http_skip", &HTTP_Skip_f, "skip current download server");
-	Cmd_AddCommand("http_cancel", &HTTP_Cancel_f, "cancel current download");
-	Cmd_AddCommand("http_clear", &HTTP_Clear_f, "cancel all downloads");
+	Cmd_AddRestrictedCommand("http_download", &HTTP_Download_f, "add file to download queue");
+	Cmd_AddRestrictedCommand("http_skip", &HTTP_Skip_f, "skip current download server");
+	Cmd_AddRestrictedCommand("http_cancel", &HTTP_Cancel_f, "cancel current download");
+	Cmd_AddRestrictedCommand("http_clear", &HTTP_Clear_f, "cancel all downloads");
 	Cmd_AddCommand("http_list", &HTTP_List_f, "list all queued downloads");
 	Cmd_AddCommand("http_addcustomserver", &HTTP_AddCustomServer_f, "add custom fastdl server");
 	http_useragent = Cvar_Get( "http_useragent", "xash3d", FCVAR_ARCHIVE, "User-Agent string" );
@@ -2559,7 +2559,7 @@ void HTTP_Init( void )
 
 	if( serverfile )
 	{
-		while( ( line = COM_ParseFile( line, token ) ) )
+		while( ( line = COM_ParseFile( line, token, sizeof( token ) ) ) )
 		{
 			httpserver_t *server = HTTP_ParseURL( token );
 

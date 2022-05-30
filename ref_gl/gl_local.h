@@ -36,8 +36,12 @@ GNU General Public License for more details.
 #include "wadfile.h"
 
 #ifndef offsetof
-#define offsetof(s,m)       (size_t)&(((s *)0)->m)
-#endif // offsetof
+#ifdef __GNUC__
+#define offsetof(s,m) __builtin_offsetof(s,m)
+#else
+#define offsetof(s,m) (size_t)&(((s *)0)->m)
+#endif
+#endif
 
 #define ASSERT(x) if(!( x )) gEngfuncs.Host_Error( "assert failed at %s:%i\n", __FILE__, __LINE__ )
 #define Assert(x) if(!( x )) gEngfuncs.Host_Error( "assert failed at %s:%i\n", __FILE__, __LINE__ )
@@ -62,7 +66,7 @@ extern poolhandle_t r_temppool;
 #define BLOCK_SIZE_DEFAULT	128		// for keep backward compatibility
 #define BLOCK_SIZE_MAX	1024
 
-#define MAX_TEXTURES	4096
+#define MAX_TEXTURES            8192	// a1ba: increased by users request
 #define MAX_DETAIL_TEXTURES	256
 #define MAX_LIGHTMAPS	256
 #define SUBDIVIDE_SIZE	64
@@ -618,6 +622,8 @@ enum
 	GL_DEBUG_OUTPUT,
 	GL_ARB_VERTEX_BUFFER_OBJECT_EXT,
 	GL_DRAW_RANGEELEMENTS_EXT,
+	GL_TEXTURE_MULTISAMPLE,
+	GL_ARB_TEXTURE_COMPRESSION_BPTC,
 	GL_EXTCOUNT,		// must be last
 };
 
@@ -718,7 +724,6 @@ extern cvar_t	*gl_texture_lodbias;
 extern cvar_t	*gl_texture_nearest;
 extern cvar_t	*gl_lightmap_nearest;
 extern cvar_t	*gl_keeptjunctions;
-extern cvar_t	*gl_emboss_scale;
 extern cvar_t	*gl_round_down;
 extern cvar_t	*gl_wireframe;
 extern cvar_t	*gl_polyoffset;
@@ -729,9 +734,6 @@ extern cvar_t	*gl_test;		// cvar to testify new effects
 extern cvar_t	*gl_msaa;
 extern cvar_t *gl_stencilbits;
 
-extern cvar_t	*r_speeds;
-extern cvar_t	*r_fullbright;
-extern cvar_t	*r_norefresh;
 extern cvar_t	*r_lighting_extended;
 extern cvar_t	*r_lighting_modulate;
 extern cvar_t	*r_lighting_ambient;
@@ -744,24 +746,14 @@ extern cvar_t	*r_nocull;
 extern cvar_t	*r_lockpvs;
 extern cvar_t	*r_lockfrustum;
 extern cvar_t	*r_traceglow;
-extern cvar_t	*r_dynamic;
-extern cvar_t	*r_lightmap;
 extern cvar_t *r_vbo;
 extern cvar_t *r_vbo_dlightmode;
 
-extern cvar_t	*vid_brightness;
-extern cvar_t	*vid_gamma;
 
 //
 // engine shared convars
 //
-extern cvar_t *gl_showtextures;
-extern cvar_t	*tracerred;
-extern cvar_t	*tracergreen;
-extern cvar_t	*tracerblue;
-extern cvar_t	*traceralpha;
-extern cvar_t	*cl_lightstyle_lerping;
-extern cvar_t	*r_showhull;
+DECLARE_ENGINE_SHARED_CVAR_LIST()
 
 //
 // engine callbacks

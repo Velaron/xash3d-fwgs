@@ -137,7 +137,7 @@ SV_RejectConnection
 Rejects connection request and sends back a message
 ================
 */
-void SV_RejectConnection( netadr_t from, char *fmt, ... )
+void SV_RejectConnection( netadr_t from, const char *fmt, ... )
 {
 	char	text[1024];
 	va_list	argptr;
@@ -733,7 +733,8 @@ sv_client_t *SV_ClientByName( const char *name )
 	sv_client_t *cl;
 	int i;
 
-	ASSERT( name && *name );
+	if( !COM_CheckString( name ))
+		return NULL;
 
 	for( i = 0, cl = svs.clients; i < svgame.globals->maxClients; i++, cl++ )
 	{
@@ -843,6 +844,8 @@ void SV_Info( netadr_t from )
 			if( svs.clients[i].state >= cs_connected )
 				count++;
 
+		// a1ba: send protocol version to distinguish old engine and new
+		Info_SetValueForKey( string, "p", va( "%i", PROTOCOL_VERSION ), MAX_INFO_STRING );
 		Info_SetValueForKey( string, "host", hostname.string, MAX_INFO_STRING );
 		Info_SetValueForKey( string, "map", sv.name, MAX_INFO_STRING );
 		Info_SetValueForKey( string, "dm", va( "%i", (int)svgame.globals->deathmatch ), MAX_INFO_STRING );
@@ -2101,7 +2104,6 @@ ucmd_t ucmds[] =
 { "spawn", SV_Spawn_f },
 { "pause", SV_Pause_f },
 { "noclip", SV_Noclip_f },
-{ "log", SV_ServerLog_f },
 { "setinfo", SV_SetInfo_f },
 { "sendres", SV_SendRes_f },
 { "notarget", SV_Notarget_f },
@@ -2118,7 +2120,7 @@ ucmd_t ucmds[] =
 SV_ExecuteUserCommand
 ==================
 */
-void SV_ExecuteClientCommand( sv_client_t *cl, char *s )
+void SV_ExecuteClientCommand( sv_client_t *cl, const char *s )
 {
 	ucmd_t	*u;
 
@@ -2182,6 +2184,7 @@ void SV_TSourceEngineQuery( netadr_t from )
 
 	MSG_Init( &buf, "TSourceEngineQuery", answer, sizeof( answer ));
 
+	MSG_WriteLong( &buf, -1 ); // Mark as connectionless
 	MSG_WriteByte( &buf, 'm' );
 	MSG_WriteString( &buf, NET_AdrToString( net_local ));
 	MSG_WriteString( &buf, hostname.string );
@@ -2192,8 +2195,11 @@ void SV_TSourceEngineQuery( netadr_t from )
 	MSG_WriteByte( &buf, svs.maxclients );
 	MSG_WriteByte( &buf, PROTOCOL_VERSION );
 	MSG_WriteByte( &buf, Host_IsDedicated() ? 'D' : 'L' );
+#if defined(_WIN32)
 	MSG_WriteByte( &buf, 'W' );
-
+#else
+	MSG_WriteByte( &buf, 'L' );
+#endif
 	if( Q_stricmp( GI->gamefolder, "valve" ))
 	{
 		MSG_WriteByte( &buf, 1 ); // mod

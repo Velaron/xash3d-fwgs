@@ -277,13 +277,13 @@ typedef struct ref_api_s
 	void (*Cbuf_Execute)( void );
 
 	// logging
-	void	(*Con_Printf)( const char *fmt, ... ); // typical console allowed messages
-	void	(*Con_DPrintf)( const char *fmt, ... ); // -dev 1
-	void	(*Con_Reportf)( const char *fmt, ... ); // -dev 2
+	void	(*Con_Printf)( const char *fmt, ... ) _format( 1 ); // typical console allowed messages
+	void	(*Con_DPrintf)( const char *fmt, ... ) _format( 1 ); // -dev 1
+	void	(*Con_Reportf)( const char *fmt, ... ) _format( 1 ); // -dev 2
 
 	// debug print
-	void	(*Con_NPrintf)( int pos, const char *fmt, ... );
-	void	(*Con_NXPrintf)( struct con_nprint_s *info, const char *fmt, ... );
+	void	(*Con_NPrintf)( int pos, const char *fmt, ... ) _format( 2 );
+	void	(*Con_NXPrintf)( struct con_nprint_s *info, const char *fmt, ... ) _format( 2 );
 	void	(*CL_CenterPrint)( const char *s, float y );
 	void (*Con_DrawStringLen)( const char *pText, int *length, int *height );
 	int (*Con_DrawString)( int x, int y, const char *string, rgba_t setColor );
@@ -335,7 +335,7 @@ typedef struct ref_api_s
 
 	// utils
 	void  (*CL_ExtraUpdate)( void );
-	void  (*Host_Error)( const char *fmt, ... );
+	void  (*Host_Error)( const char *fmt, ... ) _format( 1 ) NORETURN;
 	void  (*COM_SetRandomSeed)( int lSeed );
 	float (*COM_RandomFloat)( float rmin, float rmax );
 	int   (*COM_RandomLong)( int rmin, int rmax );
@@ -369,7 +369,6 @@ typedef struct ref_api_s
 
 	// filesystem
 	byte*	(*COM_LoadFile)( const char *path, fs_offset_t *pLength, qboolean gamedironly );
-	char*	(*COM_ParseFile)( char *data, char *token );
 	// use Mem_Free instead
 	// void	(*COM_FreeFile)( void *buffer );
 	int (*FS_FileExists)( const char *filename, int gamedironly );
@@ -418,7 +417,7 @@ typedef struct ref_api_s
 	void (*Image_SetForceFlags)( uint flags );
 	void (*Image_ClearForceFlags)( void );
 	qboolean (*Image_CustomPalette)( void );
-	qboolean (*Image_Process)( rgbdata_t **pix, int width, int height, uint flags, float bumpscale );
+	qboolean (*Image_Process)( rgbdata_t **pix, int width, int height, uint flags, float reserved );
 	rgbdata_t *(*FS_LoadImage)( const char *filename, const byte *buffer, size_t size );
 	qboolean (*FS_SaveImage)( const char *filename, rgbdata_t *pix );
 	rgbdata_t *(*FS_CopyImage)( rgbdata_t *in );
@@ -475,7 +474,6 @@ typedef struct ref_interface_s
 	void (*GL_ProcessTexture)( int texnum, float gamma, int topColor, int bottomColor );
 	void (*R_SetupSky)( const char *skyname );
 
-
 	// 2D
 	void (*R_Set2DMode)( qboolean enable );
 	void (*R_DrawStretchRaw)( float x, float y, float w, float h, int cols, int rows, const byte *data, qboolean dirty );
@@ -483,6 +481,7 @@ typedef struct ref_interface_s
 	void (*R_DrawTileClear)( int texnum, int x, int y, int w, int h );
 	void (*FillRGBA)( float x, float y, float w, float h, int r, int g, int b, int a ); // in screen space
 	void (*FillRGBABlend)( float x, float y, float w, float h, int r, int g, int b, int a ); // in screen space
+	int  (*WorldToScreen)( const vec3_t world, vec3_t screen );  // Returns 1 if it's z clipped
 
 	// screenshot, cubemapshot
 	qboolean (*VID_ScreenShot)( const char *filename, int shot_type );
@@ -596,7 +595,6 @@ typedef struct ref_interface_s
 	void	(*TexCoord2f)( float u, float v );
 	void	(*Vertex3fv)( const float *worldPnt );
 	void	(*Vertex3f)( float x, float y, float z );
-	int	(*WorldToScreen)( const float *world, float *screen );  // Returns 1 if it's z clipped
 	void	(*Fog)( float flFogColor[3], float flStart, float flEnd, int bOn ); //Works just like GL_FOG, flFogColor is r/g/b.
 	void	(*ScreenToWorld)( const float *screen, float *world  );
 	void	(*GetMatrix)( const int pname, float *matrix );
@@ -624,5 +622,53 @@ typedef int (*REFAPI)( int version, ref_interface_t *pFunctionTable, ref_api_t* 
 
 typedef void (*REF_HUMANREADABLE_NAME)( char *out, size_t len );
 #define GET_REF_HUMANREADABLE_NAME "GetRefHumanReadableName"
+
+#ifdef REF_DLL
+#define DEFINE_ENGINE_SHARED_CVAR( x, y ) cvar_t *x = NULL;
+#define DECLARE_ENGINE_SHARED_CVAR( x, y ) extern cvar_t *x;
+#define RETRIEVE_ENGINE_SHARED_CVAR( x, y ) \
+	if(!( x = gEngfuncs.pfnGetCvarPointer( #y, 0 ) )) \
+		gEngfuncs.Host_Error( S_ERROR "engine betrayed us and didn't gave us %s cvar pointer\n", #y );
+#define ENGINE_SHARED_CVAR_NAME( f, x, y ) f( x, y )
+#define ENGINE_SHARED_CVAR( f, x ) ENGINE_SHARED_CVAR_NAME( f, x, x )
+
+// cvars that's logic is shared between renderer and engine
+// actually, they are just created on engine side for convinience
+// and must be retrieved by renderer side
+// sometimes it's done to standartize cvars to make it easier for users
+#define ENGINE_SHARED_CVAR_LIST( f ) \
+	ENGINE_SHARED_CVAR_NAME( f, vid_gamma, gamma ) \
+	ENGINE_SHARED_CVAR_NAME( f, vid_brightness, brightness ) \
+	ENGINE_SHARED_CVAR_NAME( f, gl_showtextures, r_showtextures ) \
+	ENGINE_SHARED_CVAR( f, r_speeds ) \
+	ENGINE_SHARED_CVAR( f, r_fullbright ) \
+	ENGINE_SHARED_CVAR( f, r_norefresh ) \
+	ENGINE_SHARED_CVAR( f, r_lightmap ) \
+	ENGINE_SHARED_CVAR( f, r_dynamic ) \
+	ENGINE_SHARED_CVAR( f, r_drawentities ) \
+	ENGINE_SHARED_CVAR( f, r_decals ) \
+	ENGINE_SHARED_CVAR( f, r_showhull ) \
+	ENGINE_SHARED_CVAR( f, gl_vsync ) \
+	ENGINE_SHARED_CVAR( f, gl_clear ) \
+	ENGINE_SHARED_CVAR( f, cl_himodels ) \
+	ENGINE_SHARED_CVAR( f, cl_lightstyle_lerping ) \
+	ENGINE_SHARED_CVAR( f, tracerred ) \
+	ENGINE_SHARED_CVAR( f, tracergreen ) \
+	ENGINE_SHARED_CVAR( f, tracerblue ) \
+	ENGINE_SHARED_CVAR( f, traceralpha ) \
+	ENGINE_SHARED_CVAR( f, r_sprite_lerping ) \
+	ENGINE_SHARED_CVAR( f, r_sprite_lighting ) \
+	ENGINE_SHARED_CVAR( f, r_drawviewmodel ) \
+	ENGINE_SHARED_CVAR( f, r_glowshellfreq ) \
+
+#define DECLARE_ENGINE_SHARED_CVAR_LIST() \
+	ENGINE_SHARED_CVAR_LIST( DECLARE_ENGINE_SHARED_CVAR )
+
+#define DEFINE_ENGINE_SHARED_CVAR_LIST() \
+	ENGINE_SHARED_CVAR_LIST( DEFINE_ENGINE_SHARED_CVAR )
+
+#define RETRIEVE_ENGINE_SHARED_CVAR_LIST() \
+	ENGINE_SHARED_CVAR_LIST( RETRIEVE_ENGINE_SHARED_CVAR )
+#endif
 
 #endif // REF_API

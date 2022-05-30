@@ -18,6 +18,10 @@ GNU General Public License for more details.
 #include "gl_local.h"
 #include "gl_export.h"
 
+#ifdef XASH_GL4ES
+#include "gl4es/include/gl4esinit.h"
+#endif
+
 ref_api_t      gEngfuncs;
 ref_globals_t *gpGlobals;
 
@@ -337,7 +341,6 @@ qboolean R_SetDisplayTransform( ref_screen_rotation_t rotate, int offset_x, int 
 static void* GAME_EXPORT R_GetProcAddress( const char *name )
 {
 #ifdef XASH_GL4ES
-	extern void *gl4es_GetProcAddress( const char *name );
 	return gl4es_GetProcAddress( name );
 #else // TODO: other wrappers
 	return gEngfuncs.GL_GetProcAddress( name );
@@ -389,6 +392,7 @@ ref_interface_t gReffuncs =
 	R_DrawTileClear,
 	CL_FillRGBA,
 	CL_FillRGBABlend,
+	R_WorldToScreen,
 
 	VID_ScreenShot,
 	VID_CubemapShot,
@@ -475,7 +479,6 @@ ref_interface_t gReffuncs =
 	TriTexCoord2f,
 	TriVertex3fv,
 	TriVertex3f,
-	TriWorldToScreen,
 	TriFog,
 	R_ScreenToWorld,
 	TriGetMatrix,

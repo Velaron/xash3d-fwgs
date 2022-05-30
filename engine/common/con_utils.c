@@ -51,26 +51,16 @@ static con_autocomplete_t		con;
 */
 /*
 =====================================
-Cmd_GetMapList
+Cmd_ListMaps
 
-Prints or complete map filename
 =====================================
 */
-qboolean Cmd_GetMapList( const char *s, char *completedname, int length )
+int Cmd_ListMaps( search_t *t, char *lastmapname, size_t len )
 {
-	search_t		*t;
-	file_t		*f;
-	string		message, compiler, generator, matchbuf;
-	byte		buf[MAX_SYSPATH]; // 1 kb
-	int		i, nummaps;
-
-	t = FS_Search( va( "maps/%s*.bsp", s ), true, con_gamemaps->value );
-	if( !t ) return false;
-
-	COM_FileBase( t->filenames[0], matchbuf );
-	if( completedname && length )
-		Q_strncpy( completedname, matchbuf, length );
-	if( t->numfilenames == 1 ) return true;
+	byte   buf[MAX_SYSPATH]; // 1 kb
+	file_t *f;
+	int i, nummaps;
+	string mapname, message, compiler, generator;
 
 	for( i = 0, nummaps = 0; i < t->numfilenames; i++ )
 	{
@@ -78,9 +68,7 @@ qboolean Cmd_GetMapList( const char *s, char *completedname, int length )
 		const char	*ext = COM_FileExtension( t->filenames[i] );
 		int		ver = -1, lumpofs = 0, lumplen = 0;
 		char		*ents = NULL, *pfile;
-		qboolean		validmap = false;
 		int		version = 0;
-		char		*szBuf;
 		string	version_description;
 
 		if( Q_stricmp( ext, "bsp" )) continue;
@@ -132,24 +120,24 @@ qboolean Cmd_GetMapList( const char *s, char *completedname, int length )
 				message[0] = 0; // remove 'error'
 				pfile = ents;
 
-				while(( pfile = COM_ParseFile( pfile, token )) != NULL )
+				while(( pfile = COM_ParseFile( pfile, token, sizeof( token ))) != NULL )
 				{
 					if( !Q_strcmp( token, "{" )) continue;
 					else if( !Q_strcmp( token, "}" )) break;
 					else if( !Q_strcmp( token, "message" ))
 					{
 						// get the message contents
-						pfile = COM_ParseFile( pfile, message );
+						pfile = COM_ParseFile( pfile, message, sizeof( message ));
 					}
 					else if( !Q_strcmp( token, "compiler" ) || !Q_strcmp( token, "_compiler" ))
 					{
 						// get the message contents
-						pfile = COM_ParseFile( pfile, compiler );
+						pfile = COM_ParseFile( pfile, compiler, sizeof( compiler ));
 					}
 					else if( !Q_strcmp( token, "generator" ) || !Q_strcmp( token, "_generator" ))
 					{
 						// get the message contents
-						pfile = COM_ParseFile( pfile, generator );
+						pfile = COM_ParseFile( pfile, generator, sizeof( generator ));
 					}
 				}
 				Mem_Free( ents );
@@ -157,7 +145,7 @@ qboolean Cmd_GetMapList( const char *s, char *completedname, int length )
 		}
 
 		if( f ) FS_Close(f);
-		COM_FileBase( t->filenames[i], matchbuf );
+		COM_FileBase( t->filenames[i], mapname );
 
 		switch( ver )
 		{
@@ -179,11 +167,41 @@ qboolean Cmd_GetMapList( const char *s, char *completedname, int length )
 		default:	Q_strncpy( version_description, "??", sizeof( version_description )); break;
 		}
 
-		Con_Printf( "%16s (%s) ^3%s^7 ^2%s %s^7\n", matchbuf, version_description, message, compiler, generator );
+		Con_Printf( "%16s (%s) ^3%s^7 ^2%s %s^7\n", mapname, version_description, message, compiler, generator );
 		nummaps++;
 	}
 
-	Con_Printf( "\n^3 %i maps found.\n", nummaps );
+	if( lastmapname && len )
+		Q_strncpy( lastmapname, mapname, len );
+
+	return nummaps;
+}
+
+/*
+=====================================
+Cmd_GetMapList
+
+Prints or complete map filename
+=====================================
+*/
+qboolean Cmd_GetMapList( const char *s, char *completedname, int length )
+{
+	search_t *t;
+	string   matchbuf;
+	int	 i, nummaps;
+
+	t = FS_Search( va( "maps/%s*.bsp", s ), true, con_gamemaps->value );
+	if( !t ) return false;
+
+	COM_FileBase( t->filenames[0], matchbuf );
+	if( completedname && length )
+		Q_strncpy( completedname, matchbuf, length );
+	if( t->numfilenames == 1 ) return true;
+
+	nummaps = Cmd_ListMaps( t, matchbuf, sizeof( matchbuf ));
+
+	Con_Printf( "\n^3 %d maps found.\n", nummaps );
+
 	Mem_Free( t );
 
 	// cut shortestMatch to the amount common with s
@@ -924,18 +942,18 @@ qboolean Cmd_CheckMapsList_R( qboolean fRefresh, qboolean onlyingamedir )
 				Q_strncpy( message, "No Title", MAX_STRING );
 				pfile = ents;
 
-				while(( pfile = COM_ParseFile( pfile, token )) != NULL )
+				while(( pfile = COM_ParseFile( pfile, token, sizeof( token ))) != NULL )
 				{
 					if( token[0] == '}' && worldspawn )
 						worldspawn = false;
 					else if( !Q_strcmp( token, "message" ) && worldspawn )
 					{
 						// get the message contents
-						pfile = COM_ParseFile( pfile, message );
+						pfile = COM_ParseFile( pfile, message, sizeof( message ));
 					}
 					else if( !Q_strcmp( token, "classname" ))
 					{
-						pfile = COM_ParseFile( pfile, token );
+						pfile = COM_ParseFile( pfile, token, sizeof( token ));
 						if( !Q_strcmp( token, GI->mp_entity ) || use_filter )
 							num_spawnpoints++;
 					}
@@ -1198,7 +1216,7 @@ void Con_CompleteCommand( field_t *field )
 
 	if( con.matchCount == 1 )
 	{
-		Q_sprintf( con.completionField->buffer, "\\%s", con.cmds[0] );
+		Q_strncpy( con.completionField->buffer, con.cmds[0], sizeof( con.completionField->buffer ));
 		if( Cmd_Argc() == 1 ) Q_strncat( con.completionField->buffer, " ", sizeof( con.completionField->buffer ) );
 		else Con_ConcatRemaining( temp.buffer, con.completionString );
 		con.completionField->cursor = Q_strlen( con.completionField->buffer );
@@ -1226,7 +1244,7 @@ void Con_CompleteCommand( field_t *field )
 		con.shortestMatch[len] = 0;
 
 		// multiple matches, complete to shortest
-		Q_sprintf( con.completionField->buffer, "\\%s", con.shortestMatch );
+		Q_strncpy( con.completionField->buffer, con.shortestMatch, sizeof( con.completionField->buffer ));
 		con.completionField->cursor = Q_strlen( con.completionField->buffer );
 		Con_ConcatRemaining( temp.buffer, con.completionString );
 

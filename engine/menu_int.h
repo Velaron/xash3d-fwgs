@@ -31,6 +31,10 @@ typedef int		HIMAGE;		// handle to a graphic
 #define PIC_KEEP_SOURCE	(1<<1)		// some images keep source
 #define PIC_NOFLIP_TGA	(1<<2)		// Steam background completely ignore tga attribute 0x20
 
+// flags for COM_ParseFileSafe
+#define PFILE_IGNOREBRACKET (1<<0)
+#define PFILE_HANDLECOLON   (1<<1)
+
 typedef struct ui_globalvars_s
 {
 	float		time;		// unclamped host.realtime
@@ -83,10 +87,10 @@ typedef struct ui_enginefuncs_s
 	const char*	(*pfnCmd_Args)( void );
 
 	// debug messages (in-menu shows only notify)
-	void	(*Con_Printf)( const char *fmt, ... );
-	void	(*Con_DPrintf)( const char *fmt, ... );
-	void	(*Con_NPrintf)( int pos, const char *fmt, ... );
-	void	(*Con_NXPrintf)( struct con_nprint_s *info, const char *fmt, ... );
+	void	(*Con_Printf)( const char *fmt, ... ) _format( 1 );
+	void	(*Con_DPrintf)( const char *fmt, ... )  _format( 1 );
+	void	(*Con_NPrintf)( int pos, const char *fmt, ... )  _format( 2 );
+	void	(*Con_NXPrintf)( struct con_nprint_s *info, const char *fmt, ... ) _format( 2 );
 
 	// sound handlers
 	void	(*pfnPlayLocalSound)( const char *szSound );
@@ -112,7 +116,7 @@ typedef struct ui_enginefuncs_s
 	int	(*CL_CreateVisibleEntity)( int type, struct cl_entity_s *ent );
 
 	// misc handlers
-	void	(*pfnHostError)( const char *szFmt, ... );
+	void	(*pfnHostError)( const char *szFmt, ... ) _format( 1 ) NORETURN;
 	int	(*pfnFileExists)( const char *filename, int gamedironly );
 	void	(*pfnGetGameDir)( char *szGetGameDir );
 
@@ -206,6 +210,10 @@ typedef struct ui_extendedfuncs_s {
 	int (*pfnGetRenderers)( unsigned int num, char *shortName, size_t size1, char *readableName, size_t size2 );
 
 	double (*pfnDoubleTime)( void );
+
+	char *(*pfnParseFile)( char *data, char *buf, const int size, unsigned int flags, int *len );
+
+	const char	*(*pfnAdrToString)( const struct netadr_s a );
 } ui_extendedfuncs_t;
 
 // deprecated export from old engine

@@ -825,6 +825,9 @@ CL_QuakeStuffText
 void CL_QuakeStuffText( const char *text )
 {
 	Q_strncat( cmd_buf, text, sizeof( cmd_buf ));
+
+	// a1ba: didn't filtered, anyway quake protocol
+	// only supported for demos, not network games
 	Cbuf_AddText( text );
 }
 
@@ -861,9 +864,7 @@ void CL_QuakeExecStuff( void )
 
 		if( !*text ) break;
 
-		host.com_ignorebracket = true;
-		text = COM_ParseFile( text, token );
-		host.com_ignorebracket = false;
+		text = _COM_ParseFileSafe( text, token, sizeof( token ), PFILE_IGNOREBRACKET, NULL );
 
 		if( !text ) break;
 

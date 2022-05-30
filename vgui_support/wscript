@@ -111,7 +111,7 @@ def build(bld):
 
 	source = bld.path.ant_glob(['*.cpp'])
 
-	includes = [ '.', 'miniutl/', '../common', '../engine' ]
+	includes = [ '.', '../common', '../engine', '../public' ]
 
 	bld.shlib(
 		source   = source,
@@ -119,6 +119,7 @@ def build(bld):
 		features = 'cxx',
 		includes = includes,
 		use      = libs,
+		rpath    = '.',
 		install_path = bld.env.LIBDIR,
 		subsystem = bld.env.MSVC_SUBSYSTEM
 	)

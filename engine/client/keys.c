@@ -29,7 +29,7 @@ typedef struct
 
 typedef struct keyname_s
 {
-	char		*name;	// key name
+	const char	*name;	// key name
 	int		keynum;	// key number
 	const char	*binding;	// default bind
 } keyname_t;
@@ -102,8 +102,8 @@ keyname_t keynames[] =
 // A/B X/Y names match the Xbox controller layout
 {"A_BUTTON", K_A_BUTTON, "+jump"},
 {"B_BUTTON", K_B_BUTTON, "+use"},
-{"X_BUTTON", K_X_BUTTON, "+reload"}, // Flashlight
-{"Y_BUTTON", K_Y_BUTTON, "impulse 100"},
+{"X_BUTTON", K_X_BUTTON, "+reload"},
+{"Y_BUTTON", K_Y_BUTTON, "impulse 100"}, // Flashlight
 {"BACK",   K_BACK_BUTTON, "cancelselect"}, // Menu
 {"MODE",   K_MODE_BUTTON, ""},
 {"START",  K_START_BUTTON, "pause"},
@@ -462,6 +462,7 @@ Writes lines containing "bind key value"
 void Key_WriteBindings( file_t *f )
 {
 	int	i;
+	string newCommand;
 
 	if( !f ) return;
 
@@ -472,7 +473,8 @@ void Key_WriteBindings( file_t *f )
 		if( !COM_CheckString( keys[i].binding ))
 			continue;
 
-		FS_Printf( f, "bind %s \"%s\"\n", Key_KeynumToString( i ), keys[i].binding );
+		Cmd_Escape( newCommand, keys[i].binding, sizeof( newCommand ));
+		FS_Printf( f, "bind %s \"%s\"\n", Key_KeynumToString( i ), newCommand );
 	}
 }
 
@@ -512,18 +514,18 @@ void Key_Init( void )
 	keyname_t	*kn;
 
 	// register our functions
-	Cmd_AddCommand( "bind", Key_Bind_f, "binds a command to the specified key in bindmap" );
-	Cmd_AddCommand( "unbind", Key_Unbind_f, "removes a command on the specified key in bindmap" );
-	Cmd_AddCommand( "unbindall", Key_Unbindall_f, "removes all commands from all keys in bindmap" );
-	Cmd_AddCommand( "resetkeys", Key_Reset_f, "reset all keys to their default values" );
+	Cmd_AddRestrictedCommand( "bind", Key_Bind_f, "binds a command to the specified key in bindmap" );
+	Cmd_AddRestrictedCommand( "unbind", Key_Unbind_f, "removes a command on the specified key in bindmap" );
+	Cmd_AddRestrictedCommand( "unbindall", Key_Unbindall_f, "removes all commands from all keys in bindmap" );
+	Cmd_AddRestrictedCommand( "resetkeys", Key_Reset_f, "reset all keys to their default values" );
 	Cmd_AddCommand( "bindlist", Key_Bindlist_f, "display current key bindings" );
 	Cmd_AddCommand( "makehelp", Key_EnumCmds_f, "write help.txt that contains all console cvars and cmds" );
 
 	// setup default binding. "unbindall" from config.cfg will be reset it
 	for( kn = keynames; kn->name; kn++ ) Key_SetBinding( kn->keynum, kn->binding );
 
-	osk_enable = Cvar_Get( "osk_enable", "0", FCVAR_ARCHIVE, "enable built-in on-screen keyboard" );
-	key_rotate = Cvar_Get( "key_rotate", "0", FCVAR_ARCHIVE, "rotate arrow keys (0-3)" );
+	osk_enable = Cvar_Get( "osk_enable", "0", FCVAR_ARCHIVE | FCVAR_FILTERABLE, "enable built-in on-screen keyboard" );
+	key_rotate = Cvar_Get( "key_rotate", "0", FCVAR_ARCHIVE | FCVAR_FILTERABLE, "rotate arrow keys (0-3)" );
 
 }
 
@@ -812,9 +814,9 @@ void Key_EnableTextInput( qboolean enable, qboolean force )
 		OSK_EnableTextInput( enable, force );
 		return;
 	}
-	if( enable && ( !host.textmode || force ) )
+	if( enable && ( !host.textmode || force ))
 		Platform_EnableTextInput( true );
-	else if( !enable )
+	else if( !enable && ( host.textmode || force ))
 		Platform_EnableTextInput( false );
 
 	host.textmode = enable;
@@ -1042,7 +1044,7 @@ static qboolean OSK_KeyEvent( int key, int down )
 			else
 				osk.curlayout++;
 
-			osk.shift = osk.curbutton.val == OSK_SHIFT;
+			osk.shift = true;
 			osk.curbutton.val = osk_keylayout[osk.curlayout][osk.curbutton.y][osk.curbutton.x];
 			break;
 		case OSK_BACKSPACE:

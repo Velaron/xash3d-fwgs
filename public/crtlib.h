@@ -17,15 +17,8 @@ GNU General Public License for more details.
 #define STDLIB_H
 
 #include <stdarg.h>
+#include <string.h>
 #include "build.h"
-
-#ifdef __GNUC__
-#define _format(x) __attribute__((format(printf, x, x+1)))
-#define NORETURN __attribute__((noreturn))
-#else
-#define _format(x)
-#define NORETURN
-#endif
 
 // timestamp modes
 enum
@@ -38,6 +31,12 @@ enum
 	TIME_FILENAME,
 };
 
+// a1ba: not using BIT macro, so flags can be copypasted into
+// exported APIs headers and will get nice warning in case of changing values
+#define PFILE_IGNOREBRACKET (1<<0)
+#define PFILE_HANDLECOLON   (1<<1)
+#define PFILE_TOKEN_MAX_LENGTH 1024
+
 //
 // crtlib.c
 //
@@ -45,7 +44,7 @@ enum
 void Q_strnupr( const char *in, char *out, size_t size_out );
 #define Q_strlwr( in, out ) Q_strnlwr( in, out, 99999 )
 void Q_strnlwr( const char *in, char *out, size_t size_out );
-size_t Q_strlen( const char *string );
+#define Q_strlen( str ) (( str ) ? strlen(( str )) : 0 )
 size_t Q_colorstr( const char *string );
 char Q_toupper( const char in );
 char Q_tolower( const char in );
@@ -55,6 +54,7 @@ size_t Q_strncat( char *dst, const char *src, size_t siz );
 size_t Q_strncpy( char *dst, const char *src, size_t siz );
 uint Q_hashkey( const char *string, uint hashSize, qboolean caseinsensitive );
 qboolean Q_isdigit( const char *str );
+qboolean Q_isspace( const char *str );
 int Q_atoi( const char *str );
 float Q_atof( const char *str );
 void Q_atov( float *vec, const char *str, size_t siz );
@@ -89,6 +89,8 @@ char COM_Hex2Char( uint8_t hex );
 void COM_Hex2String( uint8_t hex, char *str );
 #define COM_CheckString( string ) ( ( !string || !*string ) ? 0 : 1 )
 #define COM_CheckStringEmpty( string ) ( ( !*string ) ? 0 : 1 )
+char *_COM_ParseFileSafe( char *data, char *token, const int size, unsigned int flags, int *len );
+#define COM_ParseFile( data, token, size ) _COM_ParseFileSafe( data, token, size, 0, NULL )
 int matchpattern( const char *in, const char *pattern, qboolean caseinsensitive );
 int matchpattern_with_separator( const char *in, const char *pattern, qboolean caseinsensitive, const char *separators, qboolean wildcard_least_one );
 

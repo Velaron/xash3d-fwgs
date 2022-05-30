@@ -626,8 +626,6 @@ typedef struct
 	// legacy mode support
 	qboolean legacymode;				// one-way 48 protocol compatibility
 	netadr_t legacyserver;
-	netadr_t legacyservers[MAX_LEGACY_SERVERS];
-	int	legacyservercount;
 	int extensions;
 
 	netadr_t serveradr;
@@ -680,7 +678,6 @@ extern convar_t	*cl_fixtimerate;
 extern convar_t	*hud_scale;
 extern convar_t	*gl_showtextures;
 extern convar_t	*cl_bmodelinterp;
-extern convar_t	*cl_righthand;
 extern convar_t	*cl_lw;		// local weapons
 extern convar_t	*cl_charset;
 extern convar_t	*cl_trace_messages;
@@ -828,7 +825,7 @@ int CL_FindModelIndex( const char *m );
 cl_entity_t *CL_GetLocalPlayer( void );
 model_t *CL_LoadClientSprite( const char *filename );
 model_t *CL_LoadModel( const char *modelname, int *index );
-HSPRITE pfnSPR_Load( const char *szPicName );
+HSPRITE EXPORT pfnSPR_Load( const char *szPicName );
 HSPRITE pfnSPR_LoadExt( const char *szPicName, uint texFlags );
 void PicAdjustSize( float *x, float *y, float *w, float *h );
 int CL_GetScreenInfo( SCREENINFO *pscrinfo );
@@ -845,6 +842,12 @@ movevars_t *pfnGetMoveVars( void );
 
 _inline cl_entity_t *CL_EDICT_NUM( int n )
 {
+	if( !clgame.entities )
+	{
+		Host_Error( "CL_EDICT_NUM: clgame.entities is NULL\n");
+		return NULL;
+	}
+
 	if(( n >= 0 ) && ( n < clgame.maxEntities ))
 		return clgame.entities + n;
 
@@ -1044,7 +1047,6 @@ void Con_Bottom( void );
 void Con_Top( void );
 void Con_PageDown( int lines );
 void Con_PageUp( int lines );
-void Con_LoadHistory( void );
 
 //
 // s_main.c
@@ -1107,6 +1109,11 @@ void pfnPIC_DrawAdditive( int x, int y, int width, int height, const wrect_t *pr
 //
 qboolean Mobile_Init( void );
 void Mobile_Shutdown( void );
+
+//
+// cl_securedstub.c
+//
+void CL_GetSecuredClientAPI( CL_EXPORT_FUNCS F );
 
 //
 // cl_video.c

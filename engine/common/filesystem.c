@@ -74,7 +74,7 @@ typedef struct stringlist_s
 
 typedef struct wadtype_s
 {
-	char		*ext;
+	const char		*ext;
 	signed char		type;
 } wadtype_t;
 
@@ -406,7 +406,8 @@ static const char *FS_FixFileCase( const char *path )
 	out[i] = 0;
 	return out;
 #elif !XASH_WIN32 && !XASH_IOS // assume case insensitive
-	DIR *dir; struct dirent *entry;
+	DIR *dir;
+	struct dirent *entry;
 	char path2[PATH_MAX], *fname;
 
 	if( !fs_caseinsensitive )
@@ -462,6 +463,22 @@ static const char *FS_FixFileCase( const char *path )
 #endif
 	return path;
 }
+
+#if XASH_WIN32
+/*
+====================
+FS_PathToWideChar
+
+Converts input UTF-8 string to wide char string.
+====================
+*/
+const wchar_t *FS_PathToWideChar( const char *path )
+{
+	static wchar_t pathBuffer[MAX_PATH];
+	MultiByteToWideChar( CP_UTF8, 0, path, -1, pathBuffer, MAX_PATH );
+	return pathBuffer;
+}
+#endif
 
 /*
 ====================
@@ -584,11 +601,12 @@ of the list so they override previous pack files.
 */
 pack_t *FS_LoadPackPAK( const char *packfile, int *error )
 {
-	dpackheader_t	header;
-	int		packhandle;
-	int		i, numpackfiles;
-	pack_t		*pack;
-	dpackfile_t	*info;
+	dpackheader_t header;
+	int         packhandle;
+	int         i, numpackfiles;
+	pack_t      *pack;
+	dpackfile_t *info;
+	fs_size_t     c;
 
 	packhandle = open( packfile, O_RDONLY|O_BINARY );
 
@@ -596,21 +614,21 @@ pack_t *FS_LoadPackPAK( const char *packfile, int *error )
 	if( packhandle < 0 )
 	{
 		const char *fpackfile = FS_FixFileCase( packfile );
-		if( fpackfile!= packfile )
+		if( fpackfile != packfile )
 			packhandle = open( fpackfile, O_RDONLY|O_BINARY );
 	}
 #endif
 
 	if( packhandle < 0 )
 	{
-		Con_Reportf( "%s couldn't open\n", packfile );
+		Con_Reportf( "%s couldn't open: %s\n", packfile, strerror( errno ));
 		if( error ) *error = PAK_LOAD_COULDNT_OPEN;
 		return NULL;
 	}
 
-	read( packhandle, (void *)&header, sizeof( header ));
+	c = read( packhandle, (void *)&header, sizeof( header ));
 
-	if( header.ident != IDPACKV1HEADER )
+	if( c != sizeof( header ) || header.ident != IDPACKV1HEADER )
 	{
 		Con_Reportf( "%s is not a packfile. Ignored.\n", packfile );
 		if( error ) *error = PAK_LOAD_BAD_HEADER;
@@ -669,7 +687,7 @@ pack_t *FS_LoadPackPAK( const char *packfile, int *error )
 
 #ifdef XASH_REDUCE_FD
 	// will reopen when needed
-	close(pack->handle);
+	close( pack->handle );
 	pack->handle = -1;
 #endif
 
@@ -699,11 +717,12 @@ static zip_t *FS_LoadZip( const char *zipfile, int *error )
 	int		  numpackfiles = 0, i;
 	zip_cdf_header_t  header_cdf;
 	zip_header_eocd_t header_eocd;
-	uint		  signature;
+	uint32_t          signature;
 	fs_offset_t	  filepos = 0, length;
 	zipfile_t	  *info = NULL;
 	char		  filename_buffer[MAX_SYSPATH];
-	zip_t *zip = (zip_t *)Mem_Calloc( fs_mempool, sizeof( zip_t ) );
+	zip_t         *zip = (zip_t *)Mem_Calloc( fs_mempool, sizeof( *zip ));
+	fs_size_t       c;
 
 	zip->handle = open( zipfile, O_RDONLY|O_BINARY );
 
@@ -742,9 +761,9 @@ static zip_t *FS_LoadZip( const char *zipfile, int *error )
 
 	lseek( zip->handle, 0, SEEK_SET );
 
-	read( zip->handle, &signature, sizeof( signature ) );
+	c = read( zip->handle, &signature, sizeof( signature ) );
 
-	if( signature == ZIP_HEADER_EOCD )
+	if( c != sizeof( signature ) || signature == ZIP_HEADER_EOCD )
 	{
 		Con_Reportf( S_WARN "%s has no files. Ignored.\n", zipfile );
 
@@ -773,9 +792,9 @@ static zip_t *FS_LoadZip( const char *zipfile, int *error )
 	while ( filepos > 0 )
 	{
 		lseek( zip->handle, filepos, SEEK_SET );
-		read( zip->handle, &signature, sizeof( signature ) );
+		c = read( zip->handle, &signature, sizeof( signature ) );
 
-		if( signature == ZIP_HEADER_EOCD )
+		if( c == sizeof( signature ) && signature == ZIP_HEADER_EOCD )
 			break;
 
 		filepos -= sizeof( char ); // step back one byte
@@ -792,19 +811,30 @@ static zip_t *FS_LoadZip( const char *zipfile, int *error )
 		return NULL;
 	}
 
-	read( zip->handle, &header_eocd, sizeof( zip_header_eocd_t ) );
+	c = read( zip->handle, &header_eocd, sizeof( header_eocd ) );
+
+	if( c != sizeof( header_eocd ))
+	{
+		Con_Reportf( S_ERROR "invalid EOCD header in %s. Zip file corrupted.\n", zipfile );
+
+		if( error )
+			*error = ZIP_LOAD_BAD_HEADER;
+
+		Zip_Close( zip );
+		return NULL;
+	}
 
 	// Move to CDF start
 	lseek( zip->handle, header_eocd.central_directory_offset, SEEK_SET );
 
 	// Calc count of files in archive
-	info = (zipfile_t *)Mem_Calloc( fs_mempool, sizeof( zipfile_t ) * header_eocd.total_central_directory_record );
+	info = (zipfile_t *)Mem_Calloc( fs_mempool, sizeof( *info ) * header_eocd.total_central_directory_record );
 
 	for( i = 0; i < header_eocd.total_central_directory_record; i++ )
 	{
-		read( zip->handle, &header_cdf, sizeof( header_cdf ) );
+		c = read( zip->handle, &header_cdf, sizeof( header_cdf ) );
 
-		if( header_cdf.signature != ZIP_HEADER_CDF )
+		if( c != sizeof( header_cdf ) || header_cdf.signature != ZIP_HEADER_CDF )
 		{
 			Con_Reportf( S_ERROR "CDF signature mismatch in %s. Zip file corrupted.\n", zipfile );
 
@@ -819,7 +849,20 @@ static zip_t *FS_LoadZip( const char *zipfile, int *error )
 		if( header_cdf.uncompressed_size && header_cdf.filename_len && ( header_cdf.filename_len < MAX_SYSPATH ) )
 		{
 			memset( &filename_buffer, '\0', MAX_SYSPATH );
-			read( zip->handle, &filename_buffer, header_cdf.filename_len );
+			c = read( zip->handle, &filename_buffer, header_cdf.filename_len );
+
+			if( c != header_cdf.filename_len )
+			{
+				Con_Reportf( S_ERROR "filename length mismatch in %s. Zip file corrupted.\n", zipfile );
+
+				if( error )
+					*error = ZIP_LOAD_CORRUPTED;
+
+				Mem_Free( info );
+				Zip_Close( zip );
+				return NULL;
+			}
+
 			Q_strncpy( info[numpackfiles].name, filename_buffer, MAX_SYSPATH );
 
 			info[numpackfiles].size = header_cdf.uncompressed_size;
@@ -843,7 +886,20 @@ static zip_t *FS_LoadZip( const char *zipfile, int *error )
 		zip_header_t header;
 
 		lseek( zip->handle, info[i].offset, SEEK_SET );
-		read( zip->handle, &header, sizeof( header ) );
+		c = read( zip->handle, &header, sizeof( header ) );
+
+		if( c != sizeof( header ))
+		{
+			Con_Reportf( S_ERROR "header length mismatch in %s. Zip file corrupted.\n", zipfile );
+
+			if( error )
+				*error = ZIP_LOAD_CORRUPTED;
+
+			Mem_Free( info );
+			Zip_Close( zip );
+			return NULL;
+		}
+
 		info[i].flags = header.compression_flags;
 		info[i].offset = info[i].offset + header.filename_len + header.extrafield_len + sizeof( header );
 	}
@@ -853,7 +909,7 @@ static zip_t *FS_LoadZip( const char *zipfile, int *error )
 	zip->numfiles = numpackfiles;
 	zip->files = info;
 
-	qsort( zip->files, zip->numfiles, sizeof( zipfile_t ), FS_SortZip );
+	qsort( zip->files, zip->numfiles, sizeof( *zip->files ), FS_SortZip );
 
 #ifdef XASH_REDUCE_FD
 	// will reopen when needed
@@ -872,7 +928,8 @@ void Zip_Close( zip_t *zip )
 	if( !zip )
 		return;
 
-	Mem_Free( zip->files );
+	if( zip->files )
+		Mem_Free( zip->files );
 
 	FS_EnsureOpenZip( NULL );
 
@@ -891,6 +948,7 @@ static byte *Zip_LoadFile( const char *path, fs_offset_t *sizeptr, qboolean game
 	int		zlib_result = 0;
 	dword		test_crc, final_crc;
 	z_stream	decompress_stream;
+	size_t      c;
 
 	if( sizeptr ) *sizeptr = 0;
 
@@ -920,7 +978,13 @@ static byte *Zip_LoadFile( const char *path, fs_offset_t *sizeptr, qboolean game
 		decompressed_buffer = Mem_Malloc( fs_mempool, file->size + 1 );
 		decompressed_buffer[file->size] = '\0';
 
-		read( search->zip->handle, decompressed_buffer, file->size );
+		c = read( search->zip->handle, decompressed_buffer, file->size );
+		if( c != file->size )
+		{
+			Con_Reportf( S_ERROR "Zip_LoadFile: %s size doesn't match\n", file->name );
+			return NULL;
+		}
+
 #if 0
 		CRC32_Init( &test_crc );
 		CRC32_ProcessBuffer( &test_crc, decompressed_buffer, file->size );
@@ -945,7 +1009,12 @@ static byte *Zip_LoadFile( const char *path, fs_offset_t *sizeptr, qboolean game
 		decompressed_buffer = Mem_Malloc( fs_mempool, file->size + 1 );
 		decompressed_buffer[file->size] = '\0';
 
-		read( search->zip->handle, compressed_buffer, file->compressed_size );
+		c = read( search->zip->handle, compressed_buffer, file->compressed_size );
+		if( c != file->compressed_size )
+		{
+			Con_Reportf( S_ERROR "Zip_LoadFile: %s compressed size doesn't match\n", file->name );
+			return NULL;
+		}
 
 		memset( &decompress_stream, 0, sizeof( decompress_stream ) );
 
@@ -1123,7 +1192,7 @@ static qboolean FS_AddPak_Fullpath( const char *pakfile, qboolean *already_loade
 	}
 }
 
-qboolean FS_AddZip_Fullpath( const char *zipfile, qboolean *already_loaded, int flags )
+static qboolean FS_AddZip_Fullpath( const char *zipfile, qboolean *already_loaded, int flags )
 {
 	searchpath_t	*search;
 	zip_t		*zip = NULL;
@@ -1141,7 +1210,7 @@ qboolean FS_AddZip_Fullpath( const char *zipfile, qboolean *already_loaded, int 
 
 	if( already_loaded ) *already_loaded = false;
 
-	if( !Q_stricmp( ext, "pk3" ) )
+	if( !Q_stricmp( ext, "pk3" ) || !Q_stricmp( ext, "zip" ))
 		zip = FS_LoadZip( zipfile, &errorcode );
 
 	if( zip )
@@ -1174,6 +1243,24 @@ qboolean FS_AddZip_Fullpath( const char *zipfile, qboolean *already_loaded, int 
 			Con_Reportf( S_ERROR "FS_AddZip_Fullpath: unable to load zip \"%s\"\n", zipfile );
 		return false;
 	}
+}
+
+/*
+================
+FS_AddArchive_Fullpath
+================
+*/
+static qboolean FS_AddArchive_Fullpath( const char *file, qboolean *already_loaded, int flags )
+{
+	const char *ext = COM_FileExtension( file );
+
+	if( !Q_stricmp( ext, "zip" ) || !Q_stricmp( ext, "pk3" ))
+		return FS_AddZip_Fullpath( file, already_loaded, flags );
+	else if ( !Q_stricmp( ext, "pak" ))
+		return FS_AddPak_Fullpath( file, already_loaded, flags );
+
+	// skip wads, this function only meant to be used for extras
+	return false;
 }
 
 /*
@@ -1401,11 +1488,12 @@ void FS_Rescan( void )
 	}
 #else
 	str = getenv( "XASH3D_EXTRAS_PAK1" );
-	if( COM_CheckString( str ) )
-		FS_AddPak_Fullpath( str, NULL, extrasFlags );
+	if( COM_CheckString( str ))
+		FS_AddArchive_Fullpath( str, NULL, extrasFlags );
+
 	str = getenv( "XASH3D_EXTRAS_PAK2" );
-	if( COM_CheckString( str ) )
-		FS_AddPak_Fullpath( str, NULL, extrasFlags );
+	if( COM_CheckString( str ))
+		FS_AddArchive_Fullpath( str, NULL, extrasFlags );
 #endif
 
 	if( Q_stricmp( GI->basedir, GI->gamefolder ))
@@ -1581,69 +1669,69 @@ void FS_ParseGenericGameInfo( gameinfo_t *GameInfo, const char *buf, const qbool
 	qboolean found_linux = false, found_osx = false;
 	string token;
 
-	while(( pfile = COM_ParseFile( pfile, token )) != NULL )
+	while(( pfile = COM_ParseFile( pfile, token, sizeof( token ))) != NULL )
 	{
 		// different names in liblist/gameinfo
 		if( !Q_stricmp( token, isGameInfo ? "title" : "game" ))
 		{
-			pfile = COM_ParseFile( pfile, GameInfo->title );
+			pfile = COM_ParseFile( pfile, GameInfo->title, sizeof( GameInfo->title ));
 		}
 		// valid for both
 		else if( !Q_stricmp( token, "fallback_dir" ))
 		{
-			pfile = COM_ParseFile( pfile, GameInfo->falldir );
+			pfile = COM_ParseFile( pfile, GameInfo->falldir, sizeof( GameInfo->falldir ));
 		}
 		// valid for both
 		else if( !Q_stricmp( token, "startmap" ))
 		{
-			pfile = COM_ParseFile( pfile, GameInfo->startmap );
+			pfile = COM_ParseFile( pfile, GameInfo->startmap, sizeof( GameInfo->startmap ));
 			COM_StripExtension( GameInfo->startmap ); // HQ2:Amen has extension .bsp
 		}
 		// only trainmap is valid for gameinfo
 		else if( !Q_stricmp( token, "trainmap" ) ||
 			(!isGameInfo && !Q_stricmp( token, "trainingmap" )))
 		{
-			pfile = COM_ParseFile( pfile, GameInfo->trainmap );
+			pfile = COM_ParseFile( pfile, GameInfo->trainmap, sizeof( GameInfo->trainmap ));
 			COM_StripExtension( GameInfo->trainmap ); // HQ2:Amen has extension .bsp
 		}
 		// valid for both
 		else if( !Q_stricmp( token, "url_info" ))
 		{
-			pfile = COM_ParseFile( pfile, GameInfo->game_url );
+			pfile = COM_ParseFile( pfile, GameInfo->game_url, sizeof( GameInfo->game_url ));
 		}
 		// different names
 		else if( !Q_stricmp( token, isGameInfo ? "url_update" : "url_dl" ))
 		{
-			pfile = COM_ParseFile( pfile, GameInfo->update_url );
+			pfile = COM_ParseFile( pfile, GameInfo->update_url, sizeof( GameInfo->update_url ));
 		}
 		// valid for both
 		else if( !Q_stricmp( token, "gamedll" ))
 		{
-			pfile = COM_ParseFile( pfile, GameInfo->game_dll );
+			pfile = COM_ParseFile( pfile, GameInfo->game_dll, sizeof( GameInfo->game_dll ));
 			COM_FixSlashes( GameInfo->game_dll );
 		}
 		// valid for both
 		else if( !Q_stricmp( token, "gamedll_linux" ))
 		{
-			pfile = COM_ParseFile( pfile, GameInfo->game_dll_linux );
+			pfile = COM_ParseFile( pfile, GameInfo->game_dll_linux, sizeof( GameInfo->game_dll_linux ));
 			found_linux = true;
 		}
 		// valid for both
 		else if( !Q_stricmp( token, "gamedll_osx" ))
 		{
-			pfile = COM_ParseFile( pfile, GameInfo->game_dll_osx );
+			pfile = COM_ParseFile( pfile, GameInfo->game_dll_osx, sizeof( GameInfo->game_dll_osx ));
 			found_osx = true;
 		}
 		// valid for both
 		else if( !Q_stricmp( token, "icon" ))
 		{
-			pfile = COM_ParseFile( pfile, GameInfo->iconpath );
+			pfile = COM_ParseFile( pfile, GameInfo->iconpath, sizeof( GameInfo->iconpath ));
 			COM_FixSlashes( GameInfo->iconpath );
 			COM_DefaultExtension( GameInfo->iconpath, ".ico" );
 		}
 		else if( !Q_stricmp( token, "type" ))
 		{
-			pfile = COM_ParseFile( pfile, token );
+			pfile = COM_ParseFile( pfile, token, sizeof( token ));
 
 			if( !isGameInfo && !Q_stricmp( token, "singleplayer_only" ))
 			{
@@ -1673,43 +1761,43 @@ void FS_ParseGenericGameInfo( gameinfo_t *GameInfo, const char *buf, const qbool
 		// valid for both
 		else if( !Q_stricmp( token, "version" ))
 		{
-			pfile = COM_ParseFile( pfile, token );
+			pfile = COM_ParseFile( pfile, token, sizeof( token ));
 			GameInfo->version = Q_atof( token );
 		}
 		// valid for both
 		else if( !Q_stricmp( token, "size" ))
 		{
-			pfile = COM_ParseFile( pfile, token );
+			pfile = COM_ParseFile( pfile, token, sizeof( token ));
 			GameInfo->size = Q_atoi( token );
 		}
 		else if( !Q_stricmp( token, "edicts" ))
 		{
-			pfile = COM_ParseFile( pfile, token );
+			pfile = COM_ParseFile( pfile, token, sizeof( token ));
 			GameInfo->max_edicts = Q_atoi( token );
 		}
 		else if( !Q_stricmp( token, isGameInfo ? "mp_entity" : "mpentity" ))
 		{
-			pfile = COM_ParseFile( pfile, GameInfo->mp_entity );
+			pfile = COM_ParseFile( pfile, GameInfo->mp_entity, sizeof( GameInfo->mp_entity ));
 		}
 		else if( !Q_stricmp( token, isGameInfo ? "mp_filter" : "mpfilter" ))
 		{
-			pfile = COM_ParseFile( pfile, GameInfo->mp_filter );
+			pfile = COM_ParseFile( pfile, GameInfo->mp_filter, sizeof( GameInfo->mp_filter ));
 		}
 		// valid for both
 		else if( !Q_stricmp( token, "secure" ))
 		{
-			pfile = COM_ParseFile( pfile, token );
+			pfile = COM_ParseFile( pfile, token, sizeof( token ));
 			GameInfo->secure = Q_atoi( token );
 		}
 		// valid for both
 		else if( !Q_stricmp( token, "nomodels" ))
 		{
-			pfile = COM_ParseFile( pfile, token );
+			pfile = COM_ParseFile( pfile, token, sizeof( token ));
 			GameInfo->nomodels = Q_atoi( token );
 		}
 		else if( !Q_stricmp( token, isGameInfo ? "max_edicts" : "edicts" ))
 		{
-			pfile = COM_ParseFile( pfile, token );
+			pfile = COM_ParseFile( pfile, token, sizeof( token ));
 			GameInfo->max_edicts = bound( MIN_EDICTS, Q_atoi( token ), MAX_EDICTS );
 		}
 		// only for gameinfo
@@ -1718,40 +1806,40 @@ void FS_ParseGenericGameInfo( gameinfo_t *GameInfo, const char *buf, const qbool
 			if( !Q_stricmp( token, "basedir" ))
 			{
 				string fs_path;
-				pfile = COM_ParseFile( pfile, fs_path );
+				pfile = COM_ParseFile( pfile, fs_path, sizeof( fs_path ));
 				if( Q_stricmp( fs_path, GameInfo->basedir ) || Q_stricmp( fs_path, GameInfo->gamefolder ))
 					Q_strncpy( GameInfo->basedir, fs_path, sizeof( GameInfo->basedir ));
 			}
 			else if( !Q_stricmp( token, "sp_entity" ))
 			{
-				pfile = COM_ParseFile( pfile, GameInfo->sp_entity );
+				pfile = COM_ParseFile( pfile, GameInfo->sp_entity, sizeof( GameInfo->sp_entity ));
 			}
 			else if( isGameInfo && !Q_stricmp( token, "dllpath" ))
 			{
-				pfile = COM_ParseFile( pfile, GameInfo->dll_path );
+				pfile = COM_ParseFile( pfile, GameInfo->dll_path, sizeof( GameInfo->dll_path ));
 			}
 			else if( isGameInfo && !Q_stricmp( token, "date" ))
 			{
-				pfile = COM_ParseFile( pfile, GameInfo->date );
+				pfile = COM_ParseFile( pfile, GameInfo->date, sizeof( GameInfo->date ));
 			}
 			else if( !Q_stricmp( token, "max_tempents" ))
 			{
-				pfile = COM_ParseFile( pfile, token );
+				pfile = COM_ParseFile( pfile, token, sizeof( token ));
 				GameInfo->max_tents = bound( 300, Q_atoi( token ), 2048 );
 			}
 			else if( !Q_stricmp( token, "max_beams" ))
 			{
-				pfile = COM_ParseFile( pfile, token );
+				pfile = COM_ParseFile( pfile, token, sizeof( token ));
 				GameInfo->max_beams = bound( 64, Q_atoi( token ), 512 );
 			}
 			else if( !Q_stricmp( token, "max_particles" ))
 			{
-				pfile = COM_ParseFile( pfile, token );
+				pfile = COM_ParseFile( pfile, token, sizeof( token ));
 				GameInfo->max_particles = bound( 4096, Q_atoi( token ), 32768 );
 			}
 			else if( !Q_stricmp( token, "gamemode" ))
 			{
-				pfile = COM_ParseFile( pfile, token );
+				pfile = COM_ParseFile( pfile, token, sizeof( token ));
 				// TODO: Remove this ugly hack too.
 				// This was made because Half-Life has multiplayer,
 				// but for some reason it's marked as singleplayer_only.
@@ -1767,12 +1855,18 @@ void FS_ParseGenericGameInfo( gameinfo_t *GameInfo, const char *buf, const qbool
 
 				if( ambientNum < 0 || ambientNum > ( NUM_AMBIENTS - 1 ))
 					ambientNum = 0;
-				pfile = COM_ParseFile( pfile, GameInfo->ambientsound[ambientNum] );
+				pfile = COM_ParseFile( pfile, GameInfo->ambientsound[ambientNum],
+					sizeof( GameInfo->ambientsound[ambientNum] ));
 			}
 			else if( !Q_stricmp( token, "noskills" ))
 			{
-				pfile = COM_ParseFile( pfile, token );
+				pfile = COM_ParseFile( pfile, token, sizeof( token ));
 				GameInfo->noskills = Q_atoi( token );
+			}
+			else if( !Q_stricmp( token, "render_picbutton_text" ))
+			{
+				pfile = COM_ParseFile( pfile, token, sizeof( token ));
+				GameInfo->render_picbutton_text = Q_atoi( token );
 			}
 		}
 	}
@@ -2044,9 +2138,9 @@ void FS_Init( void )
 
 	FS_InitMemory();
 
-	Cmd_AddCommand( "fs_rescan", FS_Rescan_f, "rescan filesystem search pathes" );
-	Cmd_AddCommand( "fs_path", FS_Path_f, "show filesystem search pathes" );
-	Cmd_AddCommand( "fs_clearpaths", FS_ClearPaths_f, "clear filesystem search pathes" );
+	Cmd_AddRestrictedCommand( "fs_rescan", FS_Rescan_f, "rescan filesystem search pathes" );
+	Cmd_AddRestrictedCommand( "fs_path", FS_Path_f, "show filesystem search pathes" );
+	Cmd_AddRestrictedCommand( "fs_clearpaths", FS_ClearPaths_f, "clear filesystem search pathes" );
 
 #if !XASH_WIN32
 	if( Sys_CheckParm( "-casesensitive" ) )
@@ -2097,9 +2191,15 @@ void FS_Init( void )
 
 		for( i = 0; i < dirs.numstrings; i++ )
 		{
-			// no need to check folders here, FS_CreatePath will not fail if path exists
-			// and listdirectory returns only really existing directories
-			FS_CreatePath( va( "%s" PATH_SPLITTER "%s/", host.rootdir, dirs.strings[i] ));
+			char *roPath = va( "%s" PATH_SPLITTER "%s" PATH_SPLITTER, host.rodir, dirs.strings[i] );
+			char *rwPath = va( "%s" PATH_SPLITTER "%s" PATH_SPLITTER, host.rootdir, dirs.strings[i] );
+
+			// check if it's a directory
+			if( !FS_SysFolderExists( roPath ))
+				continue;
+
+			// no need to check folders here, FS_CreatePath will not fail
+			FS_CreatePath( rwPath );
 		}
 
 		stringlistfreecontents( &dirs );
@@ -2240,7 +2340,11 @@ static file_t *FS_SysOpen( const char *filepath, const char *mode )
 	file->filetime = FS_SysFileTime( filepath );
 	file->ungetc = EOF;
 
+#if XASH_WIN32
+	file->handle = _wopen( FS_PathToWideChar(filepath), mod | opt, 0666 );
+#else
 	file->handle = open( filepath, mod|opt, 0666 );
+#endif
 
 #if !XASH_WIN32
 	if( file->handle < 0 )
@@ -2349,7 +2453,7 @@ file_t *FS_OpenZipFile( zip_t *zip, int pack_ind )
 	// compressed files handled in Zip_LoadFile
 	if( pfile->flags != ZIP_COMPRESSION_NO_COMPRESSION )
 	{
-		Con_Printf( S_ERROR "%s: can't open compressed file %s", __FUNCTION__, pfile->name );
+		Con_Printf( S_ERROR "%s: can't open compressed file %s\n", __FUNCTION__, pfile->name );
 		return NULL;
 	}
 
@@ -2373,7 +2477,7 @@ qboolean FS_SysFileExists( const char *path, qboolean caseinsensitive )
 
 	close( desc );
 	return true;
-#else
+#elif XASH_POSIX
 	int ret;
 	struct stat buf;
 
@@ -2391,6 +2495,26 @@ qboolean FS_SysFileExists( const char *path, qboolean caseinsensitive )
 		return false;
 
 	return S_ISREG( buf.st_mode );
+#else
+#error
+#endif
+}
+
+/*
+==================
+FS_SetCurrentDirectory
+
+Sets current directory, path should be in UTF-8 encoding
+==================
+*/
+int FS_SetCurrentDirectory( const char *path )
+{
+#if XASH_WIN32
+	return SetCurrentDirectoryW( FS_PathToWideChar(path) );
+#elif XASH_POSIX
+	return !chdir( path );
+#else
+#error
 #endif
 }
 
@@ -2407,23 +2531,18 @@ qboolean FS_SysFolderExists( const char *path )
 	DWORD	dwFlags = GetFileAttributes( path );
 
 	return ( dwFlags != -1 ) && ( dwFlags & FILE_ATTRIBUTE_DIRECTORY );
-#else
-	DIR *dir = opendir( path );
+#elif XASH_POSIX
+	struct stat buf;
 
-	if( dir )
+	if( stat( path, &buf ) < 0 )
 	{
-		closedir( dir );
-		return true;
-	}
-	else if( (errno == ENOENT) || (errno == ENOTDIR) )
-	{
+		Con_Reportf( S_ERROR "FS_SysFolderExists: problem while opening dir: %s\n", strerror( errno ));
 		return false;
 	}
-	else
-	{
-		Con_Reportf( S_ERROR "FS_SysFolderExists: problem while opening dir: %s\n", strerror( errno ) );
-		return false;
-	}
+
+	return S_ISDIR( buf.st_mode );
+#else
+#error
 #endif
 }
 
@@ -3347,7 +3466,23 @@ dll_user_t *FS_FindLibrary( const char *dllname, qboolean directpath )
 	{
 		// NOTE: if search is NULL let the OS found library himself
 		Q_strncpy( hInst->fullPath, dllpath, sizeof( hInst->fullPath ));
-		hInst->custom_loader = (search) ? true : false;
+
+		if( search && ( search->wad || search->pack || search->zip ) )
+		{
+#if XASH_WIN32 && XASH_X86 // a1ba: custom loader is non-portable (I just don't want to touch it)
+			Con_Printf( S_WARN "%s: loading libraries from packs is deprecated "
+				"and will be removed in the future\n", __FUNCTION__ );
+			hInst->custom_loader = true;
+#else
+			Con_Printf( S_WARN "%s: loading libraries from packs is unsupported on "
+				"this platform\n", __FUNCTION__ );
+			hInst->custom_loader = false;
+#endif
+		}
+		else
+		{
+			hInst->custom_loader = false;
+		}
 	}
 	fs_ext_path = false; // always reset direct paths
 
@@ -3520,6 +3655,7 @@ search_t *FS_Search( const char *pattern, int caseinsensitive, int gamedironly )
 	searchpath_t	*searchpath;
 	pack_t		*pak;
 	wfile_t		*wad;
+	zip_t		*zip;
 	int		i, basepathlength, numfiles, numchars;
 	int		resultlistindex, dirlistindex;
 	const char	*slash, *backslash, *colon, *separator;
@@ -3536,8 +3672,8 @@ search_t *FS_Search( const char *pattern, int caseinsensitive, int gamedironly )
 	slash = Q_strrchr( pattern, '/' );
 	backslash = Q_strrchr( pattern, '\\' );
 	colon = Q_strrchr( pattern, ':' );
-	separator = max( slash, backslash );
-	separator = max( separator, colon );
+	separator = Q_max( slash, backslash );
+	separator = Q_max( separator, colon );
 	basepathlength = separator ? (separator + 1 - pattern) : 0;
 	basepath = Mem_Calloc( fs_mempool, basepathlength + 1 );
 	if( basepathlength ) memcpy( basepath, pattern, basepathlength );
@@ -3557,6 +3693,42 @@ search_t *FS_Search( const char *pattern, int caseinsensitive, int gamedironly )
 			for( i = 0; i < pak->numfiles; i++ )
 			{
 				Q_strncpy( temp, pak->files[i].name, sizeof( temp ));
+				while( temp[0] )
+				{
+					if( matchpattern( temp, (char *)pattern, true ))
+					{
+						for( resultlistindex = 0; resultlistindex < resultlist.numstrings; resultlistindex++ )
+						{
+							if( !Q_strcmp( resultlist.strings[resultlistindex], temp ))
+								break;
+						}
+
+						if( resultlistindex == resultlist.numstrings )
+							stringlistappend( &resultlist, temp );
+					}
+
+					// strip off one path element at a time until empty
+					// this way directories are added to the listing if they match the pattern
+					slash = Q_strrchr( temp, '/' );
+					backslash = Q_strrchr( temp, '\\' );
+					colon = Q_strrchr( temp, ':' );
+					separator = temp;
+					if( separator < slash )
+						separator = slash;
+					if( separator < backslash )
+						separator = backslash;
+					if( separator < colon )
+						separator = colon;
+					*((char *)separator) = 0;
+				}
+			}
+		}
+		else if( searchpath->zip )
+		{
+			zip = searchpath->zip;
+			for( i = 0; i < zip->numfiles; i++ )
+			{
+				Q_strncpy( temp, zip->files[i].name, sizeof(temp) );
 				while( temp[0] )
 				{
 					if( matchpattern( temp, (char *)pattern, true ))
