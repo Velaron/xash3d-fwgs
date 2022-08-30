@@ -99,6 +99,7 @@ void Sys_PrintUsage( void )
 	O("-toconsole       ","run engine witn console open")
 	O("-width <n>       ","set window width")
 	O("-height <n>      ","set window height")
+	O("-display <n>     ","set display number")
 	O("-oldfont         ","enable unused Quake font in Half-Life")
 
 #if !XASH_MOBILE_PLATFORM

@@ -582,6 +582,18 @@ static void SetFullscreenModeFromCommandLine( void )
 #endif
 }
 
+static void SetDisplayNumberFromCommandLine( void )
+{
+#if !XASH_MOBILE_PLATFORM
+	int displaynumber;
+
+	Sys_GetIntFromCmdLine( "-display", &displaynumber );
+
+	if ( displaynumber >= 0 )
+		Cvar_SetValue( "vid_displaynumber", displaynumber );
+#endif
+}
+
 void R_CollectRendererNames( void )
 {
 	const char *renderers[] = DEFAULT_RENDERERS;
@@ -677,6 +689,7 @@ qboolean R_Init( void )
 	// this is done after executing video.cfg, as the command line values should take priority.
 	SetWidthAndHeightFromCommandLine();
 	SetFullscreenModeFromCommandLine();
+	SetDisplayNumberFromCommandLine();
 
 	R_CollectRendererNames();
 

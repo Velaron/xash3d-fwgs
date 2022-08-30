@@ -36,6 +36,8 @@ convar_t	*window_ypos;
 convar_t	*vid_rotate;
 convar_t	*vid_scale;
 
+convar_t	*vid_displaynumber;
+
 /*
 =================
 VID_StartupGamma
@@ -187,6 +189,8 @@ void VID_Init( void )
 	vid_highdpi = Cvar_Get( "vid_highdpi", "1", FCVAR_RENDERINFO|FCVAR_VIDRESTART, "enable High-DPI mode" );
 	vid_rotate = Cvar_Get( "vid_rotate", "0", FCVAR_RENDERINFO|FCVAR_VIDRESTART, "screen rotation (0-3)" );
 	vid_scale = Cvar_Get( "vid_scale", "1.0", FCVAR_RENDERINFO|FCVAR_VIDRESTART, "pixel scale" );
+
+	vid_displaynumber = Cvar_Get( "vid_displaynumber", "0", FCVAR_RENDERINFO|FCVAR_VIDRESTART, "monitor that displays the game window" );
 
 	// a1ba: planned to be named vid_mode for compability
 	// but supported mode list is filled by backends, so numbers are not portable any more

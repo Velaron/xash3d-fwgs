@@ -254,17 +254,28 @@ vidmode_t *R_GetVideoMode( int num )
 	return vidmodes + num;
 }
 
+static int VID_GetDisplayNumber( void )
+{
+	int numdisplays = SDL_GetNumVideoDisplays();
+
+	return Q_max( 0, Q_min( numdisplays - 1, vid_displaynumber->value ) );
+}
+
 static void R_InitVideoModes( void )
 {
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
-	int displayIndex = 0; // TODO: handle multiple displays somehow
+	int displayIndex;
 	int i, modes;
+	SDL_DisplayMode desktop_mode;
 
+	displayIndex = VID_GetDisplayNumber();
 	num_vidmodes = 0;
 	modes = SDL_GetNumDisplayModes( displayIndex );
 
 	if( !modes )
 		return;
+
+	SDL_GetDesktopDisplayMode( displayIndex, &desktop_mode );
 
 	vidmodes = Mem_Malloc( host.mempool, modes * sizeof( vidmode_t ) );
 
@@ -280,6 +291,9 @@ static void R_InitVideoModes( void )
 		}
 
 		if( mode.w < VID_MIN_WIDTH || mode.h < VID_MIN_HEIGHT )
+			continue;
+		
+		if ( mode.w > desktop_mode.w || mode.h > desktop_mode.h )
 			continue;
 
 		for( j = 0; j < num_vidmodes; j++ )
@@ -552,6 +566,7 @@ static qboolean VID_SetScreenResolution( int width, int height )
 	SDL_DisplayMode want, got;
 	Uint32 wndFlags = 0;
 	static string wndname;
+	int displayIndex = VID_GetDisplayNumber();
 
 	if( vid_highdpi->value ) wndFlags |= SDL_WINDOW_ALLOW_HIGHDPI;
 	Q_strncpy( wndname, GI->title, sizeof( wndname ));
@@ -561,7 +576,7 @@ static qboolean VID_SetScreenResolution( int width, int height )
 	want.driverdata = NULL;
 	want.format = want.refresh_rate = 0; // don't care
 
-	if( !SDL_GetClosestDisplayMode(0, &want, &got) )
+	if( !SDL_GetClosestDisplayMode(displayIndex, &want, &got) )
 		return false;
 
 	Con_Reportf( "Got closest display mode: %ix%i@%i\n", got.w, got.h, got.refresh_rate);
@@ -968,8 +983,10 @@ qboolean R_Init_Video( const int type )
 	string safe;
 	qboolean retval;
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
+	int displayIndex;
 	SDL_DisplayMode displayMode;
-	SDL_GetCurrentDisplayMode(0, &displayMode);
+	displayIndex = VID_GetDisplayNumber();
+	SDL_GetCurrentDisplayMode(displayIndex, &displayMode);
 	refState.desktopBitsPixel = SDL_BITSPERPIXEL( displayMode.format );
 #else
 	refState.desktopBitsPixel = 16;
@@ -1037,8 +1054,10 @@ rserr_t R_ChangeDisplaySettings( int width, int height, qboolean fullscreen )
 {
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
 	SDL_DisplayMode displayMode;
+	int displayIndex;
 
-	SDL_GetCurrentDisplayMode( 0, &displayMode );
+	displayIndex = VID_GetDisplayNumber();
+	SDL_GetCurrentDisplayMode( displayIndex, &displayMode );
 
 	// check our desktop attributes
 	refState.desktopBitsPixel = SDL_BITSPERPIXEL( displayMode.format );
@@ -1089,6 +1108,7 @@ qboolean VID_SetMode( void )
 	qboolean	fullscreen = false;
 	int iScreenWidth, iScreenHeight;
 	rserr_t	err;
+	int displayIndex;
 
 	iScreenWidth = Cvar_VariableInteger( "width" );
 	iScreenHeight = Cvar_VariableInteger( "height" );
@@ -1100,7 +1120,8 @@ qboolean VID_SetMode( void )
 #if !defined( DEFAULT_MODE_WIDTH ) || !defined( DEFAULT_MODE_HEIGHT )
 		SDL_DisplayMode mode;
 
-		SDL_GetDesktopDisplayMode( 0, &mode );
+		displayIndex = VID_GetDisplayNumber();
+		SDL_GetDesktopDisplayMode( displayIndex, &mode );
 
 		iScreenWidth = mode.w;
 		iScreenHeight = mode.h;
