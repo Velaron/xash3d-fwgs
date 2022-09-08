@@ -418,6 +418,8 @@ extern convar_t		sv_stopspeed;
 extern convar_t		sv_maxspeed;
 extern convar_t		sv_wateralpha;
 extern convar_t		sv_wateramp;
+extern convar_t		sv_voiceenable;
+extern convar_t		sv_voicequality;
 extern convar_t		sv_stepsize;
 extern convar_t		sv_maxvelocity;
 extern convar_t		sv_rollangle;
@@ -628,7 +630,6 @@ void SV_StartSound( edict_t *ent, int chan, const char *sample, float vol, float
 edict_t *SV_FindGlobalEntity( string_t classname, string_t globalname );
 qboolean SV_CreateStaticEntity( struct sizebuf_s *msg, int index );
 void SV_SendUserReg( sizebuf_t *msg, sv_user_message_t *user );
-edict_t* pfnPEntityOfEntIndex( int iEntIndex );
 int pfnIndexOfEdict( const edict_t *pEdict );
 void pfnWriteBytes( const byte *bytes, int count );
 void SV_UpdateBaseVelocity( edict_t *ent );

@@ -1482,7 +1482,6 @@ void GAME_EXPORT R_FunnelSprite( const vec3_t org, int modelIndex, int reverse )
 			pTemp->entity.baseline.angles[2] = COM_RandomFloat( -100.0f, 100.0f );
 			pTemp->entity.curstate.framerate = COM_RandomFloat( 0.1f, 0.4f );
 			pTemp->flags = FTENT_ROTATE|FTENT_FADEOUT;
-			pTemp->entity.curstate.framerate = 10;
 
 			vel = dest[2] / 8.0f;
 			if( vel < 64.0f ) vel = 64.0f;
@@ -1905,7 +1904,7 @@ handle temp-entity messages
 void CL_ParseTempEntity( sizebuf_t *msg )
 {
 	sizebuf_t		buf;
-	byte		pbuf[256];
+	byte		pbuf[2048];
 	int		iSize;
 	int		type, color, count, flags;
 	int		decalIndex, modelIndex, entityIndex;
@@ -1923,6 +1922,10 @@ void CL_ParseTempEntity( sizebuf_t *msg )
 	else iSize = MSG_ReadWord( msg );
 
 	decalIndex = modelIndex = entityIndex = 0;
+
+	// this will probably be fatal anyway
+	if( iSize > sizeof( pbuf ))
+		Con_Printf( S_ERROR "%s: Temp buffer overflow!\n", __FUNCTION__ );
 
 	// parse user message into buffer
 	MSG_ReadBytes( msg, pbuf, iSize );
@@ -1971,6 +1974,9 @@ void CL_ParseTempEntity( sizebuf_t *msg )
 		pos[1] = MSG_ReadCoord( &buf );
 		pos[2] = MSG_ReadCoord( &buf );
 		R_BlobExplosion( pos );
+
+		hSound = S_RegisterSound( cl_explode_sounds[0] );
+		S_StartSound( pos, -1, CHAN_AUTO, hSound, VOL_NORM, 1.0f, PITCH_NORM, 0 );
 		break;
 	case TE_SMOKE:
 		pos[0] = MSG_ReadCoord( &buf );
@@ -2024,7 +2030,7 @@ void CL_ParseTempEntity( sizebuf_t *msg )
 		dl->decay = 300;
 
 		hSound = S_RegisterSound( cl_explode_sounds[0] );
-		S_StartSound( pos, 0, CHAN_STATIC, hSound, VOL_NORM, 0.6f, PITCH_NORM, 0 );
+		S_StartSound( pos, -1, CHAN_AUTO, hSound, VOL_NORM, 0.6f, PITCH_NORM, 0 );
 		break;
 	case TE_BSPDECAL:
 	case TE_DECAL:
@@ -2920,7 +2926,7 @@ void CL_PlayerDecal( int playernum, int customIndex, int entityIndex, float *pos
 	{
 		if( FBitSet( pCust->resource.ucFlags, RES_CUSTOM ) && pCust->resource.type == t_decal && pCust->bTranslated )
 		{
-			if( !pCust->nUserData1 && pCust->pInfo != NULL )
+			if( !pCust->nUserData1 )
 			{
 				const char *decalname = va( "player%dlogo%d", playernum, customIndex );
 				pCust->nUserData1 = GL_LoadTextureInternal( decalname, pCust->pInfo, TF_DECAL );

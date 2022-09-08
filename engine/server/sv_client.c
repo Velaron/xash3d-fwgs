@@ -44,6 +44,35 @@ static int	g_userid = 1;
 
 /*
 =================
+SV_GetPlayerCount
+
+=================
+*/
+static void SV_GetPlayerCount( int *players, int *bots )
+{
+	int i;
+
+	*players = 0;
+	*bots = 0;
+
+	if( !svs.clients )
+		return;
+
+	for( i = 0; i < svs.maxclients; i++ )
+	{
+		if( svs.clients[i].state >= cs_connected )
+		{
+			if( FBitSet( svs.clients[i].flags, FCL_FAKECLIENT ))
+				(*bots)++;
+			else
+				(*players)++;
+		}
+
+	}
+}
+
+/*
+=================
 SV_GetChallenge
 
 Returns a challenge number that can be used
@@ -819,30 +848,26 @@ Responds with short info for broadcast scans
 The second parameter should be the current protocol version number.
 ================
 */
-void SV_Info( netadr_t from )
+void SV_Info( netadr_t from, int protocolVersion )
 {
 	char	string[MAX_INFO_STRING];
-	int	version;
 
 	// ignore in single player
 	if( svs.maxclients == 1 || !svs.initialized )
 		return;
 
-	version = Q_atoi( Cmd_Argv( 1 ));
 	string[0] = '\0';
 
-	if( version != PROTOCOL_VERSION )
+	if( protocolVersion != PROTOCOL_VERSION )
 	{
 		Q_snprintf( string, sizeof( string ), "%s: wrong version\n", hostname.string );
 	}
 	else
 	{
-		int i, count = 0;
+		int i, count, bots;
 		qboolean havePassword = COM_CheckStringEmpty( sv_password.string );
 
-		for( i = 0; i < svs.maxclients; i++ )
-			if( svs.clients[i].state >= cs_connected )
-				count++;
+		SV_GetPlayerCount( &count, &bots );
 
 		// a1ba: send protocol version to distinguish old engine and new
 		Info_SetValueForKey( string, "p", va( "%i", PROTOCOL_VERSION ), MAX_INFO_STRING );
@@ -1021,7 +1046,7 @@ int SV_CalcPing( sv_client_t *cl )
 
 	// bots don't have a real ping
 	if( FBitSet( cl->flags, FCL_FAKECLIENT ) || !cl->frames )
-		return 5;
+		return 0;
 
 	if( SV_UPDATE_BACKUP <= 31 )
 	{
@@ -1291,7 +1316,7 @@ a deathmatch.
 */
 void SV_PutClientInServer( sv_client_t *cl )
 {
-	static byte    	msg_buf[0x20200];	// MAX_INIT_MSG + some space
+	static byte    	msg_buf[MAX_INIT_MSG + 0x200];	// MAX_INIT_MSG + some space
 	edict_t		*ent = cl->edict;
 	sizebuf_t		msg;
 
@@ -2165,22 +2190,11 @@ void SV_TSourceEngineQuery( netadr_t from )
 {
 	// A2S_INFO
 	char	answer[1024] = "";
-	int	count = 0, bots = 0;
+	int	count, bots;
 	int	index;
 	sizebuf_t	buf;
 
-	if( svs.clients )
-	{
-		for( index = 0; index < svs.maxclients; index++ )
-		{
-			if( svs.clients[index].state >= cs_connected )
-			{
-				if( FBitSet( svs.clients[index].flags, FCL_FAKECLIENT ))
-					bots++;
-				else count++;
-			}
-		}
-	}
+	SV_GetPlayerCount( &count, &bots );
 
 	MSG_Init( &buf, "TSourceEngineQuery", answer, sizeof( answer ));
 
@@ -2257,7 +2271,7 @@ void SV_ConnectionlessPacket( netadr_t from, sizebuf_t *msg )
 
 	if( !Q_strcmp( pcmd, "ping" )) SV_Ping( from );
 	else if( !Q_strcmp( pcmd, "ack" )) SV_Ack( from );
-	else if( !Q_strcmp( pcmd, "info" )) SV_Info( from );
+	else if( !Q_strcmp( pcmd, "info" )) SV_Info( from, Q_atoi( Cmd_Argv( 1 )));
 	else if( !Q_strcmp( pcmd, "bandwidth" )) SV_TestBandWidth( from );
 	else if( !Q_strcmp( pcmd, "getchallenge" )) SV_GetChallenge( from );
 	else if( !Q_strcmp( pcmd, "connect" )) SV_ConnectClient( from );
@@ -2266,6 +2280,17 @@ void SV_ConnectionlessPacket( netadr_t from, sizebuf_t *msg )
 	else if( !Q_strcmp( pcmd, "s" )) SV_AddToMaster( from, msg );
 	else if( !Q_strcmp( pcmd, "T" "Source" )) SV_TSourceEngineQuery( from );
 	else if( !Q_strcmp( pcmd, "i" )) NET_SendPacket( NS_SERVER, 5, "\xFF\xFF\xFF\xFFj", from ); // A2A_PING
+	else if (!Q_strcmp( pcmd, "c" ))
+	{
+		qboolean sv_nat = Cvar_VariableInteger( "sv_nat" );
+		if( sv_nat )
+		{
+			netadr_t to;
+
+			if( NET_StringToAdr( Cmd_Argv( 1 ), &to ) && !NET_IsReservedAdr( to ))
+				SV_Info( to, PROTOCOL_VERSION );
+		}
+	}
 	else if( svgame.dllFuncs.pfnConnectionlessPacket( &from, args, buf, &len ))
 	{
 		// user out of band message (must be handled in CL_ConnectionlessPacket)
@@ -2538,6 +2563,59 @@ void SV_ParseCvarValue2( sv_client_t *cl, sizebuf_t *msg )
 
 /*
 ===================
+SV_ParseVoiceData
+===================
+*/
+void SV_ParseVoiceData( sv_client_t *cl, sizebuf_t *msg )
+{
+	char received[4096];
+	sv_client_t	*cur;
+	int i, client;
+	uint length, size, frames;
+
+	cl->m_bLoopback = MSG_ReadByte( msg );
+
+	frames = MSG_ReadByte( msg );
+
+	size = MSG_ReadShort( msg );
+	client = cl - svs.clients;
+
+	if( size > sizeof( received ))
+	{
+		Con_DPrintf( "SV_ParseVoiceData: invalid incoming packet.\n" );
+		SV_DropClient( cl, false );
+		return;
+	}
+
+	MSG_ReadBytes( msg, received, size );
+
+	if( !sv_voiceenable.value )
+		return;
+
+	for( i = 0, cur = svs.clients; i < svs.maxclients; i++, cur++ )
+	{
+		if ( cur->state < cs_connected && cl != cur )
+			continue;
+		
+		length = size;
+
+		// 6 is a number of bytes for other parts of message
+		if( MSG_GetNumBytesLeft( &cur->datagram ) < length + 6 )
+			continue;
+
+		if( cl == cur && !cur->m_bLoopback )
+			length = 0;
+
+		MSG_BeginServerCmd( &cur->datagram, svc_voicedata );
+		MSG_WriteByte( &cur->datagram, client );
+		MSG_WriteByte( &cur->datagram, frames );
+		MSG_WriteShort( &cur->datagram, length );
+		MSG_WriteBytes( &cur->datagram, received, length );
+	}
+}
+
+/*
+===================
 SV_ExecuteClientMessage
 
 Parse a client packet
@@ -2605,6 +2683,9 @@ void SV_ExecuteClientMessage( sv_client_t *cl, sizebuf_t *msg )
 			break;
 		case clc_fileconsistency:
 			SV_ParseConsistencyResponse( cl, msg );
+			break;
+		case clc_voicedata:
+			SV_ParseVoiceData( cl, msg );
 			break;
 		case clc_requestcvarvalue:
 			SV_ParseCvarValue( cl, msg );

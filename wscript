@@ -14,58 +14,44 @@ top = '.'
 Context.Context.line_just = 55 # should fit for everything on 80x26
 
 class Subproject:
-	name      = ''
-	dedicated = True  # if true will be ignored when building dedicated server
-	singlebin = False # if true will be ignored when singlebinary is set
-	ignore    = False # if true will be ignored, set by user request
-	mandatory  = False
-
-	def __init__(self, name, dedicated=True, singlebin=False, mandatory = False, utility = False, fuzzer = False):
+	def __init__(self, name, fnFilter = None):
 		self.name = name
-		self.dedicated = dedicated
-		self.singlebin = singlebin
-		self.mandatory = mandatory
-		self.utility = utility
-		self.fuzzer = fuzzer
+		self.fnFilter = fnFilter
+
+	def is_exists(self, ctx):
+		return ctx.path.find_node(self.name + '/wscript')
 
 	def is_enabled(self, ctx):
-		if not self.mandatory:
-			if self.name in ctx.env.IGNORE_PROJECTS:
-				self.ignore = True
-
-		if self.ignore:
+		if not self.is_exists(ctx):
 			return False
 
-		if ctx.env.SINGLE_BINARY and self.singlebin:
-			return False
-
-		if ctx.env.DEST_OS == 'android' and self.singlebin:
-			return False
-
-		if ctx.env.DEDICATED and self.dedicated:
-			return False
-
-		if self.utility and not ctx.env.ENABLE_UTILS:
-			return False
-
-		if self.fuzzer and not ctx.env.ENABLE_FUZZER:
-			return False
+		if self.fnFilter:
+			return self.fnFilter(ctx)
 
 		return True
 
 SUBDIRS = [
-	Subproject('public',      dedicated=False, mandatory = True),
-	Subproject('game_launch', singlebin=True),
-	Subproject('ref_gl',),
-	Subproject('ref_soft'),
-	Subproject('mainui'),
-	Subproject('vgui_support'),
-	Subproject('stub/server', dedicated=False),
-	Subproject('stub/client'),
+	# always configured and built
+	Subproject('public'),
+	Subproject('filesystem'),
+	Subproject('engine'),
+	Subproject('stub/server'),
 	Subproject('dllemu'),
-	Subproject('engine', dedicated=False),
-	Subproject('utils/mdldec', utility=True),
-	Subproject('utils/run-fuzzer', fuzzer=True)
+
+	# disable only by engine feature, makes no sense to even parse subprojects in dedicated mode
+	Subproject('ref_gl',       lambda x: not x.env.DEDICATED),
+	Subproject('ref_soft',     lambda x: not x.env.DEDICATED),
+	Subproject('mainui',       lambda x: not x.env.DEDICATED),
+	Subproject('vgui_support', lambda x: not x.env.DEDICATED),
+	Subproject('stub/client',  lambda x: not x.env.DEDICATED),
+	Subproject('game_launch',  lambda x: not x.env.SINGLE_BINARY and x.env.DEST_OS != 'android'),
+
+	# disable only by external dependency presense
+	Subproject('3rdparty/opus', lambda x: not x.env.HAVE_SYSTEM_OPUS and not x.env.DEDICATED),
+
+	# enabled optionally
+	Subproject('utils/mdldec',     lambda x: x.env.ENABLE_UTILS),
+	Subproject('utils/run-fuzzer', lambda x: x.env.ENABLE_FUZZER),
 ]
 
 def subdirs():
@@ -86,14 +72,14 @@ def options(opt):
 	grp.add_option('-P', '--enable-packaging', action = 'store_true', dest = 'PACKAGING', default = False,
 		help = 'respect prefix option, useful for packaging for various operating systems [default: %default]')
 
+	grp.add_option('--enabled-bundled-deps', action = 'store_true', dest = 'BUILD_BUNDLED_DEPS', default = False,
+		help = 'prefer to build bundled dependencies (like opus) instead of relying on system provided')
+
 	grp.add_option('--enable-bsp2', action = 'store_true', dest = 'SUPPORT_BSP2_FORMAT', default = False,
 		help = 'build engine and renderers with BSP2 map support(recommended for Quake, breaks compatibility!) [default: %default]')
 
 	grp.add_option('--low-memory-mode', action = 'store', dest = 'LOW_MEMORY', default = 0, type = 'int',
 		help = 'enable low memory mode (only for devices have <128 ram)')
-
-	grp.add_option('--ignore-projects', action = 'store', dest = 'IGNORE_PROJECTS', default = None,
-		help = 'disable selected projects from build [default: %default]')
 
 	grp.add_option('--disable-werror', action = 'store_true', dest = 'DISABLE_WERROR', default = False,
 		help = 'disable compilation abort on warning')
@@ -109,8 +95,7 @@ def options(opt):
 	opt.load('compiler_optimizations subproject')
 
 	for i in SUBDIRS:
-		if not i.mandatory and not opt.path.find_node(i.name+'/wscript'):
-			i.ignore = True
+		if not i.is_exists(opt):
 			continue
 
 		opt.add_subproject(i.name)
@@ -122,9 +107,6 @@ def options(opt):
 
 def configure(conf):
 	conf.load('fwgslib reconfigure compiler_optimizations')
-	if conf.options.IGNORE_PROJECTS:
-		conf.env.IGNORE_PROJECTS = conf.options.IGNORE_PROJECTS.split(',')
-
 	conf.env.MSVC_TARGETS = ['x86' if not conf.options.ALLOW64 else 'x64']
 
 	# Load compilers early
@@ -154,6 +136,7 @@ def configure(conf):
 		conf.options.NO_VGUI= True # skip vgui
 		conf.options.NANOGL = True
 		conf.options.GLWES  = True
+		conf.options.GL4ES  = True
 		conf.options.GL     = False
 	elif conf.env.MAGX:
 		conf.options.USE_SELECT       = True
@@ -207,6 +190,7 @@ def configure(conf):
 #		'-Werror=format=2',
 #		'-Wdouble-promotion', # disable warning flood
 		'-Wstrict-aliasing',
+		'-Wmisleading-indentation',
 	]
 
 	c_compiler_optional_flags = [
@@ -300,16 +284,31 @@ def configure(conf):
 
 	# set _FILE_OFFSET_BITS=64 for filesystems with 64-bit inodes
 	if conf.env.DEST_OS != 'win32' and conf.env.DEST_SIZEOF_VOID_P == 4:
-		file_offset_bits_usable = conf.check_cc(fragment='''#define _FILE_OFFSET_BITS 64
-		#include <features.h>
-		#ifndef __USE_FILE_OFFSET64
-		#error
-		#endif
-		int main(void){ return 0; }''',
+		# check was borrowed from libarchive source code
+		file_offset_bits_usable = conf.check_cc(fragment='''
+#define _FILE_OFFSET_BITS 64
+#include <sys/types.h>
+#define KB ((off_t)1024)
+#define MB ((off_t)1024 * KB)
+#define GB ((off_t)1024 * MB)
+#define TB ((off_t)1024 * GB)
+int t2[(((64 * GB -1) % 671088649) == 268434537)
+       && (((TB - (64 * GB -1) + 255) % 1792151290) == 305159546)? 1: -1];
+int main(void) { return 0; }''',
 		msg='Checking if _FILE_OFFSET_BITS can be defined to 64', mandatory=False)
 		if file_offset_bits_usable:
 			conf.define('_FILE_OFFSET_BITS', 64)
 		else: conf.undefine('_FILE_OFFSET_BITS')
+
+	if conf.env.DEST_OS != 'win32':
+		strcasestr_frag = '''#include <string.h>
+int main(int argc, char **argv) { strcasestr(argv[1], argv[2]); return 0; }'''
+
+		if conf.check_cc(msg='Checking for strcasestr', mandatory=False, fragment=strcasestr_frag):
+			conf.define('HAVE_STRCASESTR', 1)
+		elif conf.check_cc(msg='... with _GNU_SOURCE?', mandatory=False, fragment=strcasestr_frag, defines='_GNU_SOURCE=1'):
+			conf.define('_GNU_SOURCE', 1)
+			conf.define('HAVE_STRCASESTR', 1)
 
 	# check if we can use alloca.h or malloc.h
 	if conf.check_cc(header_name='alloca.h', mandatory=False):
@@ -327,6 +326,17 @@ def configure(conf):
 
 		conf.env.SHAREDIR = conf.env.LIBDIR = conf.env.BINDIR = conf.env.PREFIX
 
+	if not conf.options.BUILD_BUNDLED_DEPS:
+		# check if we can use system opus
+		conf.define('CUSTOM_MODES', 1)
+
+		# try to link with export that only exists with CUSTOM_MODES defined
+		if conf.check_pkg('opus', 'opus', '''#include <opus_custom.h>
+int main(void){ return !opus_custom_encoder_init(0, 0, 0); }''', fatal = False):
+			conf.env.HAVE_SYSTEM_OPUS = True
+		else:
+			conf.undefine('CUSTOM_MODES')
+
 	conf.define('XASH_BUILD_COMMIT', conf.env.GIT_VERSION if conf.env.GIT_VERSION else 'notset')
 	conf.define('XASH_LOW_MEMORY', conf.options.LOW_MEMORY)
 
@@ -338,6 +348,7 @@ def configure(conf):
 
 def build(bld):
 	bld.load('xshlib')
+
 	for i in SUBDIRS:
 		if not i.is_enabled(bld):
 			continue

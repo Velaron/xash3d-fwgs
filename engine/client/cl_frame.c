@@ -222,7 +222,7 @@ void CL_UpdateLatchedVars( cl_entity_t *ent )
 
 	if( ent->curstate.sequence != ent->prevstate.sequence )
 	{
-		memcpy( ent->latched.prevseqblending, ent->prevstate.blending, sizeof( ent->prevstate.blending ));
+		memcpy( ent->latched.prevseqblending, ent->prevstate.blending, sizeof( ent->latched.prevseqblending ));
 		ent->latched.prevsequence = ent->prevstate.sequence;
 		ent->latched.sequencetime = ent->curstate.animtime;
 	}
@@ -534,7 +534,7 @@ void CL_ComputePlayerOrigin( cl_entity_t *ent )
 	vec3_t	origin;
 	vec3_t	angles;
 
-	if( !ent->player || ent->index == ( cl.playernum + 1 ))
+	if( !ent->player )
 		return;
 
 	if( cl_nointerp->value > 0.f )
@@ -1094,6 +1094,9 @@ void CL_LinkPlayers( frame_t *frame )
 
 		if ( i == cl.playernum )
 		{
+			// using interpolation only for local player angles
+			CL_ComputePlayerOrigin( ent );
+
 			if( cls.demoplayback == DEMO_QUAKE1 )
 				VectorLerp( ent->prevstate.origin, cl.lerpFrac, ent->curstate.origin, cl.simorg );
 			VectorCopy( cl.simorg, ent->origin );

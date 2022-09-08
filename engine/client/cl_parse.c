@@ -484,16 +484,13 @@ void CL_BatchResourceRequest( qboolean initialize )
 		switch( p->type )
 		{
 		case t_sound:
+		case t_model:
+		case t_eventscript:
 			if( !CL_CheckFile( &msg, p ))
 				break;
 			CL_MoveToOnHandList( p );
 			break;
 		case t_skin:
-			CL_MoveToOnHandList( p );
-			break;
-		case t_model:
-			if( !CL_CheckFile( &msg, p ))
-				break;
 			CL_MoveToOnHandList( p );
 			break;
 		case t_decal:
@@ -516,11 +513,6 @@ void CL_BatchResourceRequest( qboolean initialize )
 				Mem_Free( p );
 				break;
 			}
-			if( !CL_CheckFile( &msg, p ))
-				break;
-			CL_MoveToOnHandList( p );
-			break;
-		case t_eventscript:
 			if( !CL_CheckFile( &msg, p ))
 				break;
 			CL_MoveToOnHandList( p );
@@ -1356,7 +1348,12 @@ void CL_UpdateUserinfo( sizebuf_t *msg )
 
 		if( slot == cl.playernum ) memcpy( &gameui.playerinfo, player, sizeof( player_info_t ));
 	}
-	else memset( player, 0, sizeof( *player ));
+	else
+	{
+		COM_ClearCustomizationList( &player->customdata, true );
+
+		memset( player, 0, sizeof( *player ));
+	}
 }
 
 /*
@@ -1688,7 +1685,10 @@ CL_ParseVoiceInit
 */
 void CL_ParseVoiceInit( sizebuf_t *msg )
 {
-	// TODO: ???
+	char *pszCodec = MSG_ReadString( msg );
+	int quality = MSG_ReadByte( msg );
+
+	Voice_Init( pszCodec, quality );
 }
 
 /*
@@ -1699,7 +1699,31 @@ CL_ParseVoiceData
 */
 void CL_ParseVoiceData( sizebuf_t *msg )
 {
-	// TODO: ???
+	int size, idx, frames;
+	byte received[8192];
+
+	idx = MSG_ReadByte( msg ) + 1;
+
+	frames = MSG_ReadByte( msg );
+
+	size = MSG_ReadShort( msg );
+	size = Q_min( size, sizeof( received ));
+
+	MSG_ReadBytes( msg, received, size );
+
+	if ( idx <= 0 || idx > cl.maxclients )
+		return;
+
+	// must notify through as both local player and normal client
+	if( idx == cl.playernum + 1 )
+		Voice_StatusAck( &voice.local, VOICE_LOOPBACK_INDEX );
+
+	Voice_StatusAck( &voice.players_status[idx], idx );
+
+	if ( !size )
+		return;
+
+	Voice_AddIncomingData( idx, received, size, frames );
 }
 
 /*
@@ -2343,6 +2367,7 @@ void CL_ParseServerMessage( sizebuf_t *msg, qboolean normal_message )
 			break;
 		case svc_voicedata:
 			CL_ParseVoiceData( msg );
+			cl.frames[cl.parsecountmod].graphdata.voicebytes += MSG_GetNumBytesRead( msg ) - bufStart;
 			break;
 		case svc_resourcelocation:
 			CL_ParseResLocation( msg );
@@ -2389,13 +2414,10 @@ CL_ParseBaseline
 void CL_LegacyParseBaseline( sizebuf_t *msg )
 {
 	int		i, newnum;
-	entity_state_t	nullstate;
 	qboolean		player;
 	cl_entity_t	*ent;
 
 	Delta_InitClient ();	// finalize client delta's
-
-	memset( &nullstate, 0, sizeof( nullstate ));
 
 	newnum = MSG_ReadWord( msg );
 	player = CL_IsPlayerIndex( newnum );
@@ -3127,12 +3149,6 @@ void CL_ParseLegacyServerMessage( sizebuf_t *msg, qboolean normal_message )
 			break;
 		case svc_director:
 			CL_ParseDirector( msg );
-			break;
-		case svc_voiceinit:
-			CL_ParseVoiceInit( msg );
-			break;
-		case svc_voicedata:
-			CL_ParseVoiceData( msg );
 			break;
 		case svc_resourcelocation:
 			CL_ParseResLocation( msg );

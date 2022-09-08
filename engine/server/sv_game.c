@@ -60,6 +60,28 @@ qboolean SV_CheckEdict( const edict_t *e, const char *file, const int line )
 }
 #endif
 
+static edict_t *SV_PEntityOfEntIndex( const int iEntIndex, const qboolean allentities )
+{
+	if( iEntIndex >= 0 && iEntIndex < GI->max_edicts )
+	{
+		edict_t *pEdict = EDICT_NUM( iEntIndex );
+		qboolean player = allentities ? iEntIndex <= svs.maxclients : iEntIndex < svs.maxclients;
+
+		if( !iEntIndex || FBitSet( host.features, ENGINE_QUAKE_COMPATIBLE ))
+			return pEdict; // just get access to array
+
+		if( SV_IsValidEdict( pEdict ) && pEdict->pvPrivateData )
+			return pEdict;
+
+		// g-cont: world and clients can be accessed even without private data
+		if( SV_IsValidEdict( pEdict ) && player )
+			return pEdict;
+	}
+
+	return NULL;
+}
+
+
 /*
 =============
 EntvarsDescription
@@ -93,7 +115,7 @@ entavrs table for FindEntityByString
 */
 TYPEDESCRIPTION *SV_GetEntvarsDescirption( int number )
 {
-	if( number < 0 && number >= ENTVARS_COUNT )
+	if( number < 0 || number >= ENTVARS_COUNT )
 		return NULL;
 	return &gEntvarsDescription[number];
 }
@@ -586,7 +608,7 @@ void SV_RestartAmbientSounds( void )
 			continue;
 
 		S_StopSound( si->entnum, si->channel, si->name );
-		SV_StartSound( pfnPEntityOfEntIndex( si->entnum ), CHAN_STATIC, si->name, si->volume, si->attenuation, 0, si->pitch );
+		SV_StartSound( SV_PEntityOfEntIndex( si->entnum, true ), CHAN_STATIC, si->name, si->volume, si->attenuation, 0, si->pitch );
 	}
 
 #if !XASH_DEDICATED // TODO: ???
@@ -640,10 +662,10 @@ void SV_RestartDecals( void )
 	for( i = 0; i < host.numdecals; i++ )
 	{
 		entry = &host.decalList[i];
-		modelIndex = pfnPEntityOfEntIndex( entry->entityIndex )->v.modelindex;
+		modelIndex = SV_PEntityOfEntIndex( entry->entityIndex, true )->v.modelindex;
 
 		// game override
-		if( SV_RestoreCustomDecal( entry, pfnPEntityOfEntIndex( entry->entityIndex ), false ))
+		if( SV_RestoreCustomDecal( entry, SV_PEntityOfEntIndex( entry->entityIndex, true ), false ))
 			continue;
 
 		decalIndex = pfnDecalIndex( entry->name );
@@ -2658,7 +2680,7 @@ void GAME_EXPORT pfnMessageEnd( void )
 				return;
 			}
 
-			sv.multicast.pData[svgame.msg_size_index] = svgame.msg_realsize;
+			*(word *)&sv.multicast.pData[svgame.msg_size_index] = svgame.msg_realsize;
 		}
 	}
 	else if( svgame.msg[svgame.msg_index].size != -1 )
@@ -2714,7 +2736,7 @@ void GAME_EXPORT pfnMessageEnd( void )
 
 	SV_Multicast( svgame.msg_dest, org, svgame.msg_ent, true, false );
 
-	if( svgame.msg_trace ) Con_Printf( "^3%s()\n", __FUNCTION__, svgame.msg_dest, svgame.msg_name );
+	if( svgame.msg_trace ) Con_Printf( "^3%s()\n", __FUNCTION__ );
 }
 
 /*
@@ -3350,24 +3372,23 @@ pfnPEntityOfEntIndex
 
 =============
 */
-edict_t *pfnPEntityOfEntIndex( int iEntIndex )
+static edict_t *pfnPEntityOfEntIndex( int iEntIndex )
 {
-	if( iEntIndex >= 0 && iEntIndex < GI->max_edicts )
-	{
-		edict_t	*pEdict = EDICT_NUM( iEntIndex );
+	// have to be bug-compatible with GoldSrc in this function
+	if( host.bugcomp == BUGCOMP_GOLDSRC )
+		return SV_PEntityOfEntIndex( iEntIndex, false );
+	return SV_PEntityOfEntIndex( iEntIndex, true );
+}
 
-		if( !iEntIndex || FBitSet( host.features, ENGINE_QUAKE_COMPATIBLE ))
-			return pEdict; // just get access to array
+/*
+=============
+pfnPEntityOfEntIndexAllEntities
 
-		if( SV_IsValidEdict( pEdict ) && pEdict->pvPrivateData )
-			return pEdict;
-
-		// g-cont: world and clients can be acessed even without private data!
-		if( SV_IsValidEdict( pEdict ) && SV_IsPlayerIndex( iEntIndex ))
-			return pEdict;
-	}
-
-	return NULL;
+=============
+*/
+static edict_t *pfnPEntityOfEntIndexAllEntities( int iEntIndex )
+{
+	return SV_PEntityOfEntIndex( iEntIndex, true );
 }
 
 /*
@@ -3830,7 +3851,7 @@ char *pfnGetInfoKeyBuffer( edict_t *e )
 	if(( cl = SV_ClientFromEdict( e, false )) != NULL )
 		return cl->userinfo;
 
-	return ""; // assume error
+	return (char*)""; // assume error
 }
 
 /*
@@ -3972,7 +3993,7 @@ void GAME_EXPORT SV_PlaybackEventFull( int flags, const edict_t *pInvoker, word 
 		return;	// someone stupid joke
 
 	// first check event for out of bounds
-	if( eventindex < 1 || eventindex > MAX_EVENTS )
+	if( eventindex < 1 || eventindex >= MAX_EVENTS )
 	{
 		Con_Printf( S_ERROR "EV_Playback: invalid eventindex %i\n", eventindex );
 		return;
@@ -4740,6 +4761,7 @@ static enginefuncs_t gEngfuncs =
 	pfnQueryClientCvarValue,
 	pfnQueryClientCvarValue2,
 	COM_CheckParm,
+	pfnPEntityOfEntIndexAllEntities,
 };
 
 /*
@@ -4794,7 +4816,7 @@ qboolean SV_ParseEdict( char **pfile, edict_t *ent )
 		if( !token[0] ) continue;
 
 		// create keyvalue strings
-		pkvd[numpairs].szClassName = ""; // unknown at this moment
+		pkvd[numpairs].szClassName = (char*)""; // unknown at this moment
 		pkvd[numpairs].szKeyName = copystring( keyname );
 		pkvd[numpairs].szValue = copystring( token );
 		pkvd[numpairs].fHandled = false;
@@ -4832,8 +4854,8 @@ qboolean SV_ParseEdict( char **pfile, edict_t *ent )
 	{
 		if( numpairs < 256 )
 		{
-			pkvd[numpairs].szClassName = "custom";
-			pkvd[numpairs].szKeyName = "customclass";
+			pkvd[numpairs].szClassName = (char*)"custom";
+			pkvd[numpairs].szKeyName = (char*)"customclass";
 			pkvd[numpairs].szValue = classname;
 			pkvd[numpairs].fHandled = false;
 			numpairs++;
@@ -4901,7 +4923,7 @@ qboolean SV_ParseEdict( char **pfile, edict_t *ent )
 			Mem_Free( pkvd[i].szValue );
 	}
 
-	if( classname && Mem_IsAllocatedExt( host.mempool, classname ))
+	if( Mem_IsAllocatedExt( host.mempool, classname ))
 		Mem_Free( classname );
 
 	return true;
