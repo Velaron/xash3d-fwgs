@@ -1112,8 +1112,12 @@ void Touch_Init( void )
 	touch_enable = Cvar_Get( "touch_enable", DEFAULT_TOUCH_ENABLE, FCVAR_ARCHIVE | FCVAR_FILTERABLE, "enable touch controls" );
 	touch_emulate = Cvar_Get( "touch_emulate", "0", FCVAR_ARCHIVE | FCVAR_FILTERABLE, "emulate touch with mouse" );
 
-	/// TODO: touch sdl platform
-	// SDL_SetHint( SDL_HINT_ANDROID_SEPARATE_MOUSE_AND_TOUCH, "1" );
+#if SDL_VERSION_ATLEAST( 2, 0, 10 )
+    SDL_SetHint( SDL_HINT_MOUSE_TOUCH_EVENTS, "0" );
+    SDL_SetHint( SDL_HINT_TOUCH_MOUSE_EVENTS, "0" );
+#else
+	SDL_SetHint( SDL_HINT_ANDROID_SEPARATE_MOUSE_AND_TOUCH, "1" );
+#endif
 
 	touch.initialized = true;
 }

@@ -122,7 +122,8 @@ Platform_Vibrate
 */
 void Platform_Vibrate( float time, char flags )
 {
-	// stub
+	// TODO: Android
+	SDL_JoystickRumble( g_joy, 0xFFFF, 0xFFFF, time );
 }
 
 /*

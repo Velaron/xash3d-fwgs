@@ -107,10 +107,6 @@ void Sys_PrintUsage( void )
 	O("-dedicated       ","run engine in dedicated server mode")
 #endif // XASH_MOBILE_PLATFORM
 
-#if XASH_ANDROID
-	O("-nativeegl       ","use native egl implementation. Use if screen does not update or black")
-#endif // XASH_ANDROID
-
 #if XASH_WIN32
 	O("-noavi           ","disable AVI support")
 	O("-nointro         ","disable intro video")
@@ -999,6 +995,8 @@ void Host_InitCommon( int argc, char **argv, const char *progname, qboolean bCha
 #if TARGET_OS_IOS
 		const char *IOS_GetDocsDir();
 		Q_strncpy( host.rootdir, IOS_GetDocsDir(), sizeof(host.rootdir) );
+#elif XASH_ANDROID && !XASH_DEDICATED
+        Q_strncpy( host.rootdir, SDL_AndroidGetInternalStoragePath(), sizeof( host.rootdir ) );
 #elif XASH_SDL == 2
 		char *szBasePath;
 

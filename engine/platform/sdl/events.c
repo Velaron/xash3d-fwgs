@@ -25,7 +25,7 @@ GNU General Public License for more details.
 #include "sound.h"
 #include "vid_common.h"
 
-#if ! SDL_VERSION_ATLEAST( 2, 0, 0 )
+#if !SDL_VERSION_ATLEAST( 2, 0, 0 )
 #define SDL_SCANCODE_A SDLK_a
 #define SDL_SCANCODE_Z SDLK_z
 #define SDL_SCANCODE_1 SDLK_1
@@ -666,7 +666,9 @@ void Platform_RunEvents( void )
 
 void* Platform_GetNativeObject( const char *name )
 {
-	return NULL; // SDL don't have it
+#if XASH_ANDROID
+	return Android_GetNativeObject( name );
+#endif
 }
 
 /*

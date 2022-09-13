@@ -187,7 +187,7 @@ void IN_ToggleClientMouse( int newstate, int oldstate )
 	if( ( newstate == key_menu  || newstate == key_console || newstate == key_message ) && ( !CL_IsBackgroundMap() || CL_IsBackgroundDemo( )))
 	{
 #if XASH_ANDROID
-		Android_ShowMouse( true );
+		//Android_ShowMouse( true );
 #endif
 #ifdef XASH_USE_EVDEV
 		Evdev_SetGrab( false );
@@ -196,7 +196,7 @@ void IN_ToggleClientMouse( int newstate, int oldstate )
 	else
 	{
 #if XASH_ANDROID
-		Android_ShowMouse( false );
+		//Android_ShowMouse( false );
 #endif
 #ifdef XASH_USE_EVDEV
 		Evdev_SetGrab( true );

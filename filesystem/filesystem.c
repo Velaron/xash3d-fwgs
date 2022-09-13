@@ -23,6 +23,10 @@ GNU General Public License for more details.
 #elif XASH_DOS4GW
 #include <direct.h>
 #include <errno.h>
+#elif XASH_ANDROID
+#include <SDL.h>
+#include <dirent.h>
+#include <errno.h>
 #else
 #include <dirent.h>
 #include <errno.h>
@@ -496,6 +500,11 @@ void FS_ClearSearchPath( void )
 		case SEARCHPATH_ZIP:
 			FS_CloseZIP( search->zip );
 			break;
+#if XASH_ANDROID
+        case SEARCHPATH_AASSET:
+            FS_CloseAAsset( search->aasset );
+            break;
+#endif
 		default:
 			break;
 		}
@@ -1175,6 +1184,8 @@ void FS_Rescan( void )
 		FS_AddPak_Fullpath( va( "%sextras.pak", SDL_GetBasePath() ), NULL, extrasFlags );
 		FS_AddPak_Fullpath( va( "%sextras_%s.pak", SDL_GetBasePath(), GI->gamefolder ), NULL, extrasFlags );
 	}
+#elif XASH_ANDROID
+    FS_AddAAsset_Fullpath( va( "%s/assets", GI->gamefolder ), NULL, extrasFlags );
 #else
 	str = getenv( "XASH3D_EXTRAS_PAK1" );
 	if( COM_CheckString( str ))
@@ -1518,6 +1529,11 @@ void FS_Path_f( void )
 		case SEARCHPATH_ZIP:
 			FS_PrintZIPInfo( info, sizeof( info ), s->zip );
 			break;
+#if XASH_ANDROID
+        case SEARCHPATH_AASSET:
+            //Q_strncpy( info, s->aasset->path, sizeof( info ) );
+            break;
+#endif
 		case SEARCHPATH_PLAIN:
 			Q_strncpy( info, s->filename, sizeof( info ));
 			break;
@@ -1821,6 +1837,16 @@ searchpath_t *FS_FindFile( const char *name, int *index, qboolean gamedironly )
 				return search;
 			}
 		}
+#if XASH_ANDROID
+        else if( search->type == SEARCHPATH_AASSET )
+        {
+            if ( FS_FindFileAAsset( search->aasset, name ) )
+            {
+                if( index != NULL ) *index = -1;
+                return search;
+            }
+        }
+#endif
 		else
 		{
 			char	netpath[MAX_SYSPATH];
@@ -1889,6 +1915,11 @@ file_t *FS_OpenReadFile( const char *filename, const char *mode, qboolean gamedi
 		return NULL; // let W_LoadFile get lump correctly
 	case SEARCHPATH_ZIP:
 		return FS_OpenZipFile( search->zip, pack_ind );
+#if XASH_ANDROID
+    case SEARCHPATH_AASSET:
+        if( pack_ind < 0 )
+            return FS_OpenAAssetFile( search->aasset, filename );
+#endif
 	default:
 		if( pack_ind < 0 )
 		{
@@ -2593,6 +2624,9 @@ int FS_FileTime( const char *filename, qboolean gamedironly )
 		return FS_FileTimeWAD( search->wad );
 	case SEARCHPATH_ZIP:
 		return FS_FileTimeZIP( search->zip );
+#if XASH_ANDROID
+        return FS_FileTimeAAsset( search->aasset );
+#endif
 	default:
 		if( pack_ind < 0 )
 		{
@@ -2746,6 +2780,12 @@ search_t *FS_Search( const char *pattern, int caseinsensitive, int gamedironly )
 		{
 			FS_SearchWAD( &resultlist, searchpath->wad, pattern );
 		}
+#if XASH_ANDROID
+		else if( searchpath->type == SEARCHPATH_AASSET )
+		{
+			FS_SearchAAsset( &resultlist, searchpath->wad, pattern );
+		}
+#endif
 		else
 		{
 			// get a directory listing and look at each name

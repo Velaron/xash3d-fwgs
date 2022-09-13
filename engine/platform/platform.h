@@ -45,13 +45,15 @@ void Platform_MessageBox( const char *title, const char *message, qboolean paren
 const char *Android_GetAndroidID( void );
 const char *Android_LoadID( void );
 void Android_SaveID( const char *id );
+void Android_Init( void );
+void *Android_GetNativeObject( const char *name );
 #endif
 
 #if XASH_WIN32
 void Platform_UpdateStatusLine( void );
-#else 
+#else
 static inline void Platform_UpdateStatusLine( void ) { }
-#endif  
+#endif
 
 /*
 ==============================================================================

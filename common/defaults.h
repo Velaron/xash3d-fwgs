@@ -50,26 +50,6 @@ SETUP BACKENDS DEFINITIONS
 				#define XASH_MESSAGEBOX MSGBOX_SDL
 			#endif // XASH_MESSAGEBOX
 		#endif
-	#elif XASH_ANDROID
-		// we are building for Android platform, use Android APIs
-		#ifndef XASH_VIDEO
-			#define XASH_VIDEO VIDEO_ANDROID
-		#endif // XASH_VIDEO
-
-		#ifndef XASH_INPUT
-			#define XASH_INPUT INPUT_ANDROID
-		#endif // XASH_INPUT
-
-		#ifndef XASH_SOUND
-			#define XASH_SOUND SOUND_OPENSLES
-		#endif // XASH_SOUND
-
-		#ifndef XASH_MESSAGEBOX
-			#define XASH_MESSAGEBOX MSGBOX_ANDROID
-		#endif // XASH_MESSAGEBOX
-
-		#define XASH_USE_EVDEV
-		#define XASH_DYNAMIC_DLADDR
 	#elif XASH_LINUX
 		// we are building for Linux without SDL2, can draw only to framebuffer yet
 		#ifndef XASH_VIDEO
@@ -182,6 +162,15 @@ Default build-depended cvar and constant values
 // this means that libraries are provided with engine, but not in game data
 // You need add library loading code to library.c when adding new platform
 #endif // XASH_ANDROID || XASH_IOS || XASH_EMSCRIPTEN
+
+#if XASH_ANDROID
+//		#ifndef XASH_MESSAGEBOX
+//			#define XASH_MESSAGEBOX MSGBOX_ANDROID
+//		#endif // XASH_MESSAGEBOX
+
+		#define XASH_USE_EVDEV
+		#define XASH_DYNAMIC_DLADDR
+#endif // XASH_ANDROID
 
 // allow override for developer/debug builds
 #ifndef DEFAULT_DEV

@@ -27,6 +27,9 @@ extern "C"
 typedef struct zip_s zip_t;
 typedef struct pack_s pack_t;
 typedef struct wfile_s wfile_t;
+#if XASH_ANDROID
+typedef struct aasset_s aasset_t;
+#endif
 
 #define FILE_BUFF_SIZE		(2048)
 
@@ -53,7 +56,10 @@ enum
 	SEARCHPATH_PLAIN = 0,
 	SEARCHPATH_PAK,
 	SEARCHPATH_WAD,
-	SEARCHPATH_ZIP
+	SEARCHPATH_ZIP,
+#if XASH_ANDROID
+	SEARCHPATH_AASSET
+#endif
 };
 
 typedef struct stringlist_s
@@ -74,6 +80,7 @@ typedef struct searchpath_s
 		pack_t  *pack;
 		wfile_t *wad;
 		zip_t   *zip;
+        aasset_t    *aasset;
 	};
 	struct searchpath_s *next;
 } searchpath_t;
@@ -200,6 +207,18 @@ void     FS_SearchZIP( stringlist_t *list, zip_t *zip, const char *pattern );
 byte    *FS_LoadZIPFile( const char *path, fs_offset_t *sizeptr, qboolean gamedironly );
 file_t  *FS_OpenZipFile( zip_t *zip, int pack_ind );
 qboolean FS_AddZip_Fullpath( const char *zipfile, qboolean *already_loaded, int flags );
+
+//
+// aasset.c
+//
+#if XASH_ANDROID
+int         FS_FileTimeAAsset( aasset_t *aasset );
+int         FS_FindFileAAsset( aasset_t *aasset, const char *name );
+void        FS_CloseAAsset( aasset_t *aasset );
+void        FS_SearchAAsset( stringlist_t *list, aasset_t *aasset, const char *pattern );
+file_t      *FS_OpenAAssetFile( aasset_t *aasset, const char *filename );
+qboolean    FS_AddAAsset_Fullpath( const char *path, qboolean *already_loaded, int flags );
+#endif // XASH_ANDROID
 
 #ifdef __cplusplus
 }
