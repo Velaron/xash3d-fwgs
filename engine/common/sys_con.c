@@ -121,11 +121,12 @@ void Sys_InitLog( void )
 {
 	const char	*mode;
 
+	Q_strncpy( s_ld.log_path, "engine.log", sizeof( s_ld.log_path ) );
+
 	if( Sys_CheckParm( "-log" ) && host.allow_console != 0 )
-	{
-		s_ld.log_active = true;
-		Q_strncpy( s_ld.log_path, "engine.log", sizeof( s_ld.log_path ));
-	}
+		s_ld.log_active = true;	
+	else
+		s_ld.log_active = DEFAULT_LOG;
 
 	if( host.change_game && host.type != HOST_DEDICATED )
 		mode = "a";

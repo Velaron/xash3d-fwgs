@@ -72,7 +72,6 @@ void Platform_Init( void )
 #endif
 
 #if XASH_ANDROID
-	SDL_SetHint( SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight" );
 	Android_Init();
 #endif
 

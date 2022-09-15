@@ -23,33 +23,18 @@ GNU General Public License for more details.
 
 #include <android/log.h>
 #include <jni.h>
+#include <SDL.h>
 
 //convar_t *android_sleep;
 struct jnimethods_s
 {
 	JavaVM *vm;
 	JNIEnv *env;
-    jobject activity;
-    jclass actcls;
-	jmethodID enableTextInput;
-	jmethodID vibrate;
-	jmethodID messageBox;
-	jmethodID notify;
-	jmethodID setTitle;
-	jmethodID setIcon;
+	jobject activity;
+	jclass actcls;
 	jmethodID getAndroidId;
 	jmethodID saveID;
 	jmethodID loadID;
-	jmethodID showMouse;
-	jmethodID shellExecute;
-	jmethodID swapBuffers;
-	jmethodID toggleEGL;
-	jmethodID createGLContext;
-	jmethodID getGLAttribute;
-	jmethodID deleteGLContext;
-	jmethodID getSelectedPixelFormat;
-	jmethodID getSurface;
-	int width, height;
 } jni;
 
 //typedef void (*pfnChangeGame)( const char *progname );
@@ -57,32 +42,14 @@ struct jnimethods_s
 
 void Android_Init( void )
 {
-    jni.env = (JNIEnv *) SDL_AndroidGetJNIEnv();
-    jni.activity = (jobject) SDL_AndroidGetActivity();
-    jni.actcls = (*jni.env)->GetObjectClass( jni.env, jni.activity );
-    jni.loadID = (*jni.env)->GetMethodID( jni.env, jni.actcls, "loadID", "()Ljava/lang/String;" );
-    jni.getAndroidId = (*jni.env)->GetMethodID( jni.env, jni.actcls, "getAndroidID", "()Ljava/lang/String;" );
-    jni.saveID = (*jni.env)->GetMethodID( jni.env, jni.actcls, "saveID", "(Ljava/lang/String;)V" );
-//	jni.enableTextInput = (*env)->GetStaticMethodID(env, jni.actcls, "showKeyboard", "(I)V");
-//	jni.vibrate = (*env)->GetStaticMethodID(env, jni.actcls, "vibrate", "(I)V" );
-//	jni.messageBox = (*env)->GetStaticMethodID(env, jni.actcls, "messageBox", "(Ljava/lang/String;Ljava/lang/String;)V");
-//	jni.notify = (*env)->GetStaticMethodID(env, jni.actcls, "engineThreadNotify", "()V");
-//	jni.setTitle = (*env)->GetStaticMethodID(env, jni.actcls, "setTitle", "(Ljava/lang/String;)V");
-//	jni.setIcon = (*env)->GetStaticMethodID(env, jni.actcls, "setIcon", "(Ljava/lang/String;)V");
-//
-//
-//	jni.showMouse = (*env)->GetStaticMethodID(env, jni.actcls, "showMouse", "(I)V");
-//	jni.shellExecute = (*env)->GetStaticMethodID(env, jni.actcls, "shellExecute", "(Ljava/lang/String;)V");
-//
-//	jni.swapBuffers = (*env)->GetStaticMethodID(env, jni.actcls, "swapBuffers", "()V");
-//	jni.toggleEGL = (*env)->GetStaticMethodID(env, jni.actcls, "toggleEGL", "(I)V");
-//	jni.createGLContext = (*env)->GetStaticMethodID(env, jni.actcls, "createGLContext", "([I[I)Z");
-//	jni.getGLAttribute = (*env)->GetStaticMethodID(env, jni.actcls, "getGLAttribute", "(I)I");
-//	jni.deleteGLContext = (*env)->GetStaticMethodID(env, jni.actcls, "deleteGLContext", "()Z");
-//	jni.getSelectedPixelFormat = (*env)->GetStaticMethodID(env, jni.actcls, "getSelectedPixelFormat", "()I");
-//	jni.getSurface = (*env)->GetStaticMethodID(env, jni.actcls, "getNativeSurface", "()Landroid/view/Surface;");
+	jni.env = (JNIEnv *) SDL_AndroidGetJNIEnv();
+	jni.activity = (jobject) SDL_AndroidGetActivity();
+	jni.actcls = (*jni.env)->GetObjectClass( jni.env, jni.activity );
+	jni.loadID = (*jni.env)->GetMethodID( jni.env, jni.actcls, "loadID", "()Ljava/lang/String;" );
+	jni.getAndroidId = (*jni.env)->GetMethodID( jni.env, jni.actcls, "getAndroidID", "()Ljava/lang/String;" );
+	jni.saveID = (*jni.env)->GetMethodID( jni.env, jni.actcls, "saveID", "(Ljava/lang/String;)V" );
 
-//    android_sleep = Cvar_Get( "android_sleep", "1", FCVAR_ARCHIVE, "Enable sleep in background" );
+	SDL_SetHint( SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight" );
 }
 
 /*
@@ -135,9 +102,9 @@ const char *Android_GetAndroidID( void )
 {
 	static char id[32];
 	jstring resultJNIStr;
-    const char *resultCStr;
+	const char *resultCStr;
 
-    if ( COM_CheckString( id ) ) return id;
+	if ( COM_CheckString( id ) ) return id;
 
 	resultJNIStr = (*jni.env)->CallObjectMethod( jni.env, jni.activity, jni.getAndroidId );
 	resultCStr = (*jni.env)->GetStringUTFChars( jni.env, resultJNIStr, NULL );
@@ -154,13 +121,13 @@ Android_LoadID
 */
 const char *Android_LoadID( void )
 {
-    static char id[32];
-    jstring resultJNIStr;
-    const char *resultCStr;
+	static char id[32];
+	jstring resultJNIStr;
+	const char *resultCStr;
 
-    resultJNIStr = (*jni.env)->CallObjectMethod( jni.env, jni.activity, jni.loadID );
+	resultJNIStr = (*jni.env)->CallObjectMethod( jni.env, jni.activity, jni.loadID );
 	resultCStr = (*jni.env)->GetStringUTFChars( jni.env, resultJNIStr, NULL );
-    Q_strncpy( id, resultCStr, sizeof(id) );
+	Q_strncpy( id, resultCStr, sizeof(id) );
 	(*jni.env)->ReleaseStringUTFChars( jni.env, resultJNIStr, resultCStr );
 
 	return id;
@@ -194,9 +161,9 @@ Android_ShowMouse
 */
 void Android_ShowMouse( qboolean show )
 {
-	if( m_ignore->value )
-		show = true;
-	(*jni.env)->CallStaticVoidMethod( jni.env, jni.actcls, jni.showMouse, show );
+//	if( m_ignore->value )
+//		show = true;
+//	(*jni.env)->CallStaticVoidMethod( jni.env, jni.actcls, jni.showMouse, show );
 }
 
 /*
@@ -206,18 +173,18 @@ Android_ShellExecute
 */
 void Platform_ShellExecute( const char *path, const char *parms )
 {
-	jstring jstr;
-
-	if( !path )
-		return; // useless
-
-	// get java.lang.String
-	jstr = (*jni.env)->NewStringUTF( jni.env, path );
-
-	// open browser
-	(*jni.env)->CallStaticVoidMethod(jni.env, jni.actcls, jni.shellExecute, jstr);
-
-	// no need to free jstr
+//	jstring jstr;
+//
+//	if( !path )
+//		return; // useless
+//
+//	// get java.lang.String
+//	jstr = (*jni.env)->NewStringUTF( jni.env, path );
+//
+//	// open browser
+//	(*jni.env)->CallStaticVoidMethod(jni.env, jni.actcls, jni.shellExecute, jstr);
+//
+//	// no need to free jstr
 }
 
 /*

@@ -494,8 +494,10 @@ create win32 console
 */
 void Wcon_CreateConsole( void )
 {
-	if( Sys_CheckParm( "-log" ))
+	if( Sys_CheckParm( "-log" ) )
 		s_wcd.log_active = true;
+	else
+		s_wcd.log_active = DEFAULT_LOG;
 
 	if( host.type == HOST_NORMAL )
 	{

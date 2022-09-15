@@ -181,4 +181,8 @@ Default build-depended cvar and constant values
 	#define DEFAULT_FULLSCREEN 1
 #endif // DEFAULT_FULLSCREEN
 
+#ifndef DEFAULT_LOG
+	#define DEFAULT_LOG 0
+#endif // DEFAULT_LOG
+
 #endif // DEFAULTS_H

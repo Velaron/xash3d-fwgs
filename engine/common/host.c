@@ -893,6 +893,9 @@ void Host_InitCommon( int argc, char **argv, const char *progname, qboolean bCha
 		}
 	}
 
+	if ( DEFAULT_DEV > DEV_NONE )
+		host.allow_console = true;
+
 #if XASH_ENGINE_TESTS
 	if( Sys_CheckParm( "-runtests" ))
 	{
