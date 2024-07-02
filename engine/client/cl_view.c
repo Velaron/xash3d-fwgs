@@ -69,17 +69,17 @@ static void V_CalcViewRect( void )
 		size = 1.0f;
 	}
 
-	clgame.viewport[2] = refState.width * size;
-	clgame.viewport[3] = refState.height * size;
+	clgame.viewport[2] = refState.render_width * size;
+	clgame.viewport[3] = refState.render_height * size;
 
-	if( clgame.viewport[3] > refState.height - sb_lines )
-		clgame.viewport[3] = refState.height - sb_lines;
-	if( clgame.viewport[3] > refState.height )
-		clgame.viewport[3] = refState.height;
+	if( clgame.viewport[3] > refState.render_height - sb_lines )
+		clgame.viewport[3] = refState.render_height - sb_lines;
+	if( clgame.viewport[3] > refState.render_height )
+		clgame.viewport[3] = refState.render_height;
 
-	clgame.viewport[0] = ( refState.width - clgame.viewport[2] ) / 2;
+	clgame.viewport[0] = ( refState.render_width - clgame.viewport[2] ) / 2;
 	if( full ) clgame.viewport[1] = 0;
-	else clgame.viewport[1] = ( refState.height - sb_lines - clgame.viewport[3] ) / 2;
+	else clgame.viewport[1] = ( refState.render_height - sb_lines - clgame.viewport[3] ) / 2;
 
 }
 

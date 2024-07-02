@@ -118,6 +118,9 @@ typedef struct ref_globals_s
 	size_t		visbytes;		// cluster size
 
 	int desktopBitsPixel;
+
+	int render_width;
+	int render_height;
 } ref_globals_t;
 
 typedef struct ref_client_s

@@ -330,26 +330,16 @@ static void GAME_EXPORT R_Flush( unsigned int flags )
 
 static qboolean R_SetDisplayTransform( ref_screen_rotation_t rotate, int offset_x, int offset_y, float scale_x, float scale_y )
 {
-	qboolean ret = true;
-	if( rotate > 0 )
+	if( !r_fbo.value )
 	{
-		gEngfuncs.Con_Printf("rotation transform not supported\n");
-		ret = false;
+		gEngfuncs.Con_Printf( S_WARN "Display transform not supported, use gl_fbo 1\n" );
+		return false;
 	}
 
-	if( offset_x || offset_y )
-	{
-		gEngfuncs.Con_Printf("offset transform not supported\n");
-		ret = false;
-	}
+	// gl_fbo.scale_x = scale_x;
+	// gl_fbo.scale_y = scale_y;
 
-	if( scale_x != 1.0f || scale_y != 1.0f )
-	{
-		gEngfuncs.Con_Printf("scale transform not supported\n");
-		ret = false;
-	}
-
-	return ret;
+	return true;
 }
 
 static void* GAME_EXPORT R_GetProcAddress( const char *name )

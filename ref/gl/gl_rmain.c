@@ -538,10 +538,10 @@ void R_SetupGL( qboolean set_gl_state )
 		int	x, x2, y, y2;
 
 		// set up viewport (main, playersetup)
-		x = floor( RI.viewport[0] * gpGlobals->width / gpGlobals->width );
-		x2 = ceil(( RI.viewport[0] + RI.viewport[2] ) * gpGlobals->width / gpGlobals->width );
-		y = floor( gpGlobals->height - RI.viewport[1] * gpGlobals->height / gpGlobals->height );
-		y2 = ceil( gpGlobals->height - ( RI.viewport[1] + RI.viewport[3] ) * gpGlobals->height / gpGlobals->height );
+		x = floor( RI.viewport[0] * gpGlobals->render_width / gpGlobals->render_width );
+		x2 = ceil(( RI.viewport[0] + RI.viewport[2] ) * gpGlobals->render_width / gpGlobals->render_width );
+		y = floor( gpGlobals->render_height - RI.viewport[1] * gpGlobals->render_height / gpGlobals->render_height );
+		y2 = ceil( gpGlobals->render_height - ( RI.viewport[1] + RI.viewport[3] ) * gpGlobals->render_height / gpGlobals->render_height );
 
 		pglViewport( x, y2, x2 - x, y - y2 );
 	}
@@ -1048,10 +1048,13 @@ void R_BeginFrame( qboolean clearScene )
 
 	R_CheckGamma();
 
+	GL_FBOBeginFrame();
+
 	R_Set2DMode( true );
 
 	// draw buffer stuff
-	pglDrawBuffer( GL_BACK );
+	if( !gl_fbo.fbo )
+		pglDrawBuffer( GL_BACK );	
 
 	// update texture parameters
 	if( FBitSet( gl_texture_nearest.flags|gl_lightmap_nearest.flags|gl_texture_anisotropy.flags|gl_texture_lodbias.flags, FCVAR_CHANGED ))
@@ -1154,6 +1157,9 @@ void R_EndFrame( void )
 #if !defined( XASH_GL_STATIC )
 	GL2_ShimEndFrame();
 #endif
+
+	GL_FBOEndFrame();
+
 	// flush any remaining 2D bits
 	R_Set2DMode( false );
 	gEngfuncs.GL_SwapBuffers();

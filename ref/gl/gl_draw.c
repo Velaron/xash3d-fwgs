@@ -240,6 +240,8 @@ R_Set2DMode
 */
 void R_Set2DMode( qboolean enable )
 {
+	GL_FBOSet2DMode( enable );
+
 	if( enable )
 	{
 		if( glState.in2DMode )

@@ -633,6 +633,7 @@ enum
 	GL_BUFFER_STORAGE_EXT,
 	GL_MAP_BUFFER_RANGE_EXT,
 	GL_DRAW_RANGE_ELEMENTS_BASE_VERTEX_EXT,
+	GL_FRAMEBUFFER_OBJECT,
 	GL_EXTCOUNT,		// must be last
 };
 
@@ -748,6 +749,32 @@ static inline model_t *CL_ModelHandle( int index )
 
 #define WORLDMODEL (gp_cl->models[1])
 
+// fbo
+typedef struct gl_fbo_s
+{
+	GLuint fbo[2];
+	GLuint depthbuf;
+	GLuint texture[2];
+	GLenum mode;
+
+	ref_screen_rotation_t rotation;
+	int offset_x;
+	int offset_y;
+	float scale_x;
+	float scale_y;
+
+	int win_width;
+	int win_height;
+} gl_fbo_t;
+
+extern gl_fbo_t	gl_fbo;
+
+void GL_InitFBO( void );
+void GL_ShutdownFBO( void );
+void GL_FBOSet2DMode( qboolean mode );
+void GL_FBOBeginFrame( void );
+void GL_FBOEndFrame( void );
+
 //
 // renderer cvars
 //
@@ -767,6 +794,7 @@ extern convar_t	gl_test;		// cvar to testify new effects
 extern convar_t	gl_msaa;
 extern convar_t	gl_stencilbits;
 extern convar_t	gl_overbright;
+extern convar_t r_fbo;
 
 extern convar_t	r_lighting_extended;
 extern convar_t	r_lighting_ambient;

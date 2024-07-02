@@ -817,6 +817,15 @@ typedef float GLmatrix[16];
 #define GL_DEBUG_SEVERITY_MEDIUM_ARB		0x9147
 #define GL_DEBUG_SEVERITY_LOW_ARB		0x9148
 
+// framebuffer object
+#define GL_READ_FRAMEBUFFER     0x8CA8
+#define GL_DRAW_FRAMEBUFFER     0x8CA9
+#define GL_FRAMEBUFFER          0x8D40
+#define GL_RENDERBUFFER         0x8D41
+#define GL_DEPTH_ATTACHMENT     0x8D00
+#define GL_COLOR_ATTACHMENT0    0x8CE0
+#define GL_FRAMEBUFFER_COMPLETE 0x8CD5
+
 // GL Core additions
 #define GL_NUM_EXTENSIONS                 0x821D
 #define GL_MAP_WRITE_BIT 0x0002

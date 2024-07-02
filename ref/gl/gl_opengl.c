@@ -36,7 +36,7 @@ CVAR_DEFINE( r_vbo_overbrightmode, "gl_vbo_overbrightmode", "0", FCVAR_ARCHIVE, 
 CVAR_DEFINE_AUTO( r_ripple, "0", FCVAR_GLCONFIG, "enable software-like water texture ripple simulation" );
 CVAR_DEFINE_AUTO( r_ripple_updatetime, "0.05", FCVAR_GLCONFIG, "how fast ripple simulation is" );
 CVAR_DEFINE_AUTO( r_ripple_spawntime, "0.1", FCVAR_GLCONFIG, "how fast new ripples spawn" );
-
+CVAR_DEFINE( r_fbo, "gl_fbo", "1", FCVAR_GLCONFIG, "use opengl framebuffer object rendering" );
 
 DEFINE_ENGINE_SHARED_CVAR_LIST()
 
@@ -256,6 +256,21 @@ static dllfunc_t drawrangeelementsextfuncs[] =
 { NULL, NULL }
 };
 
+static dllfunc_t fbofuncs[] = 
+{
+{ GL_CALL( glGenFramebuffers ) },
+{ GL_CALL( glBindFramebuffer ) },
+{ GL_CALL( glGenRenderbuffers ) },
+{ GL_CALL( glFramebufferRenderbuffer ) },
+{ GL_CALL( glBindRenderbuffer ) },
+{ GL_CALL( glRenderbufferStorage ) },
+{ GL_CALL( glFramebufferTexture2D ) },
+{ GL_CALL( glCheckFramebufferStatus ) },
+{ GL_CALL( glBlitFramebuffer ) },
+{ GL_CALL( glDeleteFramebuffers ) },
+{ GL_CALL( glDeleteRenderbuffers ) },
+{ NULL, NULL }
+};
 
 // mangling in gl2shim???
 // still need resolve some ext dynamicly, and mangling beginend wrappers will help only with LTO
@@ -1014,6 +1029,9 @@ static void GL_InitExtensionsBigGL( void )
 	// rectangle textures support
 	GL_CheckExtension( "GL_ARB_texture_rectangle", NULL, "gl_texture_rectangle", GL_TEXTURE_2D_RECT_EXT, 0 );
 
+	// framebuffer object
+	GL_CheckExtension( "GL_ARB_framebuffer_object", fbofuncs, "gl_framebuffer_object", GL_FRAMEBUFFER_OBJECT, 1.1 );
+
 	if( !GL_CheckExtension( "glDrawRangeElements", drawrangeelementsfuncs, "gl_drawrangeelements", GL_DRAW_RANGEELEMENTS_EXT, 0 ) )
 	{
 		if( GL_CheckExtension( "glDrawRangeElementsEXT", drawrangeelementsextfuncs,
@@ -1207,6 +1225,7 @@ static void GL_InitCommands( void )
 	gEngfuncs.Cvar_RegisterVariable( &gl_stencilbits );
 	gEngfuncs.Cvar_RegisterVariable( &gl_round_down );
 	gEngfuncs.Cvar_RegisterVariable( &gl_overbright );
+	gEngfuncs.Cvar_RegisterVariable( &r_fbo );
 
 	// these cvar not used by engine but some mods requires this
 	gEngfuncs.Cvar_RegisterVariable( &gl_polyoffset );
@@ -1299,6 +1318,7 @@ qboolean R_Init( void )
 
 	GL_SetDefaults();
 	R_CheckVBO();
+	GL_InitFBO();
 	R_InitImages();
 	R_SpriteInit();
 	R_StudioInit();
@@ -1324,6 +1344,8 @@ void R_Shutdown( void )
 #if !defined(XASH_GLES) && !defined(XASH_GL_STATIC)
 	GL2_ShimShutdown();
 #endif
+
+	GL_ShutdownFBO();
 
 	Mem_FreePool( &r_temppool );
 

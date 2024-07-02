@@ -74,8 +74,11 @@ void R_SaveVideoMode( int w, int h, int render_w, int render_h, qboolean maximiz
 	if( refState.width == render_w && refState.height == render_h )
 		return;
 
-	refState.width = render_w;
-	refState.height = render_h;
+	refState.width = w;
+	refState.height = h;
+
+	refState.render_width = render_w;
+	refState.render_height = render_h;
 
 	// check for 4:3 or 5:4
 	if( render_w * 3 != render_h * 4 && render_w * 4 != render_h * 5 )
@@ -153,8 +156,8 @@ void VID_SetDisplayTransform( int *render_w, int *render_h )
 			*render_h = swap;
 		}
 
-		*render_h /= vid_scale.value;
-		*render_w /= vid_scale.value;
+		*render_h *= vid_scale.value;
+		*render_w *= vid_scale.value;
 	}
 	else
 	{
