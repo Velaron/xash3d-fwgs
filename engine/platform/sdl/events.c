@@ -88,51 +88,7 @@ GNU General Public License for more details.
 #define SDL_SCANCODE_PRINTSCREEN SDLK_PRINT
 #define SDL_SCANCODE_UNKNOWN SDLK_UNKNOWN
 #define SDL_GetScancodeName( x ) "unknown"
-#define SDL_JoystickID Uint8
 #endif
-
-static int SDLash_GameControllerButtonMapping[] =
-{
-#if XASH_NSWITCH // devkitPro/SDL has inverted Nintendo layout for SDL_GameController
-	K_B_BUTTON, K_A_BUTTON, K_Y_BUTTON, K_X_BUTTON,
-#else
-	K_A_BUTTON, K_B_BUTTON, K_X_BUTTON, K_Y_BUTTON,
-#endif
-	K_BACK_BUTTON, K_MODE_BUTTON, K_START_BUTTON,
-	K_LSTICK, K_RSTICK,
-	K_L1_BUTTON, K_R1_BUTTON,
-	K_DPAD_UP, K_DPAD_DOWN, K_DPAD_LEFT, K_DPAD_RIGHT,
-	K_MISC_BUTTON,
-	K_PADDLE1_BUTTON, K_PADDLE2_BUTTON, K_PADDLE3_BUTTON, K_PADDLE4_BUTTON,
-	K_TOUCHPAD,
-};
-
-// Swap axis to follow default axis binding:
-// LeftX, LeftY, RightX, RightY, TriggerRight, TriggerLeft
-static int SDLash_GameControllerAxisMapping[] =
-{
-	JOY_AXIS_SIDE, // SDL_CONTROLLER_AXIS_LEFTX,
-	JOY_AXIS_FWD, // SDL_CONTROLLER_AXIS_LEFTY,
-	JOY_AXIS_PITCH, // SDL_CONTROLLER_AXIS_RIGHTX,
-	JOY_AXIS_YAW, // SDL_CONTROLLER_AXIS_RIGHTY,
-	JOY_AXIS_LT, // SDL_CONTROLLER_AXIS_TRIGGERLEFT,
-	JOY_AXIS_RT, // SDL_CONTROLLER_AXIS_TRIGGERRIGHT,
-};
-
-static qboolean SDLash_IsInstanceIDAGameController( SDL_JoystickID joyId )
-{
-#if !SDL_VERSION_ATLEAST( 2, 0, 4 )
-	// HACKHACK: if we're not initialized g_joy, then we're probably using gamecontroller api
-	// so return true
-	if( !g_joy )
-		return true;
-	return false;
-#else
-	if( SDL_GameControllerFromInstanceID( joyId ) != NULL )
-		return true;
-	return false;
-#endif
-}
 
 /*
 =============
@@ -156,21 +112,18 @@ static void SDLash_KeyEvent( SDL_KeyboardEvent key )
 	}
 #endif
 
-	if( SDL_IsTextInputActive( ))
+	if( SDL_IsTextInputActive( ) && down )
 	{
 		// this is how engine understands ctrl+c, ctrl+v and other hotkeys
-		if( down && cls.key_dest != key_game )
+		if( cls.key_dest != key_game && FBitSet( SDL_GetModState(), KMOD_CTRL ))
 		{
-			if( FBitSet( SDL_GetModState(), KMOD_CTRL ))
+			if( keynum >= SDL_SCANCODE_A && keynum <= SDL_SCANCODE_Z )
 			{
-				if( keynum >= SDL_SCANCODE_A && keynum <= SDL_SCANCODE_Z )
-				{
-					keynum = keynum - SDL_SCANCODE_A + 1;
-					CL_CharEvent( keynum );
-				}
-
-				return;
+				keynum = keynum - SDL_SCANCODE_A + 1;
+				CL_CharEvent( keynum );
 			}
+
+			return;
 		}
 
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
@@ -268,7 +221,7 @@ static void SDLash_KeyEvent( SDL_KeyboardEvent key )
 			break;
 		}
 		case SDL_SCANCODE_PAUSE: keynum = K_PAUSE; break;
-		case SDL_SCANCODE_SCROLLLOCK: keynum = K_SCROLLOCK; break;
+		case SDL_SCANCODE_SCROLLLOCK: keynum = K_SCROLLLOCK; break;
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
 		case SDL_SCANCODE_APPLICATION: keynum = K_WIN; break; // (compose key) ???
 		// don't console spam on known functional buttons, not used in engine
@@ -282,11 +235,11 @@ static void SDLash_KeyEvent( SDL_KeyboardEvent key )
 #endif // SDL_VERSION_ATLEAST( 2, 0, 0 )
 		case SDL_SCANCODE_UNKNOWN:
 		{
-			if( down ) Con_Reportf( "SDLash_KeyEvent: Unknown scancode\n" );
+			if( down ) Con_Reportf( "%s: Unknown scancode\n", __func__ );
 			return;
 		}
 		default:
-			if( down ) Con_Reportf( "SDLash_KeyEvent: Unknown key: %s = %i\n", SDL_GetScancodeName( keynum ), keynum );
+			if( down ) Con_Reportf( "%s: Unknown key: %s = %i\n", __func__, SDL_GetScancodeName( keynum ), keynum );
 			return;
 		}
 	}
@@ -357,13 +310,17 @@ SDLash_InputEvent
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
 static void SDLash_InputEvent( SDL_TextInputEvent input )
 {
-	char *text;
+	const char *text;
+
 	VGui_ReportTextInput( input.text );
+
 	for( text = input.text; *text; text++ )
 	{
-		int ch;
+		int ch = (byte)*text;
 
-		ch = Con_UtfProcessChar((byte)*text );
+		// do not pass UTF-8 sequence into the engine, convert it here
+		if( !cls.accept_utf8 )
+			ch = Con_UtfProcessCharForce( ch );
 
 		if( !ch )
 			continue;
@@ -395,57 +352,17 @@ static void SDLash_ActiveEvent( int gain )
 		}
 #endif
 		host.status = HOST_NOFOCUS;
+
 		if( cls.key_dest == key_game )
+		{
+			Key_ClearStates();
 			IN_DeactivateMouse();
+		}
 
 		host.force_draw_version_time = host.realtime + 2.0;
 		VID_RestoreScreenResolution();
 	}
 }
-
-#if SDL_VERSION_ATLEAST( 2, 0, 0 )
-static size_t num_open_game_controllers = 0;
-
-static void SDLash_GameController_Add( int index )
-{
-	extern convar_t joy_enable; // private to input system
-	SDL_GameController *controller;
-
-	if( !joy_enable.value )
-		return;
-
-	controller = SDL_GameControllerOpen( index );
-	if( !controller )
-	{
-		Con_Reportf( "Failed to open SDL GameController %d: %s\n", index, SDL_GetError( ) );
-		SDL_ClearError( );
-		return;
-	}
-#if SDL_VERSION_ATLEAST( 2, 0, 6 )
-	Con_Reportf( "Added controller: %s (%i:%i:%i)\n",
-		SDL_GameControllerName( controller ),
-		SDL_GameControllerGetVendor( controller ),
-		SDL_GameControllerGetProduct( controller ),
-		SDL_GameControllerGetProductVersion( controller ));
-#endif // SDL_VERSION_ATLEAST( 2, 0, 6 )
-
-	++num_open_game_controllers;
-	if( num_open_game_controllers == 1 )
-		Joy_AddEvent( );
-}
-
-
-static void SDLash_GameController_Remove( SDL_JoystickID joystick_id )
-{
-	Con_Reportf( "Removed controller %i\n", joystick_id );
-
-	// `Joy_RemoveEvent` sets `joy_found` to `0`.
-	// We only want to do this when all the game controllers have been removed.
-	--num_open_game_controllers;
-	if( num_open_game_controllers == 0 )
-		Joy_RemoveEvent( );
-}
-#endif
 
 /*
 =============
@@ -453,7 +370,7 @@ SDLash_EventFilter
 
 =============
 */
-static void SDLash_EventFilter( SDL_Event *event )
+static void SDLash_EventHandler( SDL_Event *event )
 {
 	switch ( event->type )
 	{
@@ -474,30 +391,8 @@ static void SDLash_EventFilter( SDL_Event *event )
 		SDLash_KeyEvent( event->key );
 		break;
 
-	/* Joystick events */
-	case SDL_JOYAXISMOTION:
-		if ( !SDLash_IsInstanceIDAGameController( event->jaxis.which ))
-			Joy_AxisMotionEvent( event->jaxis.axis, event->jaxis.value );
-		break;
-
-	case SDL_JOYBALLMOTION:
-		if ( !SDLash_IsInstanceIDAGameController( event->jball.which ))
-			Joy_BallMotionEvent( event->jball.ball, event->jball.xrel, event->jball.yrel );
-		break;
-
-	case SDL_JOYHATMOTION:
-		if ( !SDLash_IsInstanceIDAGameController( event->jhat.which ))
-			Joy_HatMotionEvent( event->jhat.hat, event->jhat.value );
-		break;
-
-	case SDL_JOYBUTTONDOWN:
-	case SDL_JOYBUTTONUP:
-		if ( !SDLash_IsInstanceIDAGameController( event->jbutton.which ))
-			Joy_ButtonEvent( event->jbutton.button, event->jbutton.state );
-		break;
-
 	case SDL_QUIT:
-		Sys_Quit();
+		Sys_Quit( "caught SDL_QUIT" );
 		break;
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
 	case SDL_MOUSEWHEEL:
@@ -563,46 +458,17 @@ static void SDLash_EventFilter( SDL_Event *event )
 		SDLash_InputEvent( event->text );
 		break;
 
-	case SDL_JOYDEVICEADDED:
-		Joy_AddEvent();
-		break;
-	case SDL_JOYDEVICEREMOVED:
-		Joy_RemoveEvent();
-		break;
-
 	/* GameController API */
 	case SDL_CONTROLLERAXISMOTION:
-	{
-		if( !Joy_IsActive( ))
-			break;
-
-		if( event->caxis.axis >= 0 && event->caxis.axis < ARRAYSIZE( SDLash_GameControllerAxisMapping ))
-		{
-			Joy_KnownAxisMotionEvent( SDLash_GameControllerAxisMapping[event->caxis.axis], event->caxis.value );
-		}
-		break;
-	}
-
 	case SDL_CONTROLLERBUTTONDOWN:
 	case SDL_CONTROLLERBUTTONUP:
-	{
-		if( !Joy_IsActive( ))
-			break;
-
-		// TODO: Use joyinput funcs, for future multiple gamepads support
-		if( event->cbutton.button >= 0 && event->cbutton.button < ARRAYSIZE( SDLash_GameControllerButtonMapping ))
-		{
-			Key_Event( SDLash_GameControllerButtonMapping[event->cbutton.button], event->cbutton.state );
-		}
-		break;
-	}
-
 	case SDL_CONTROLLERDEVICEADDED:
-		SDLash_GameController_Add( event->cdevice.which );
-		break;
-
 	case SDL_CONTROLLERDEVICEREMOVED:
-		SDLash_GameController_Remove( event->cdevice.which );
+	case SDL_CONTROLLERTOUCHPADDOWN:
+	case SDL_CONTROLLERTOUCHPADMOTION:
+	case SDL_CONTROLLERTOUCHPADUP:
+	case SDL_CONTROLLERSENSORUPDATE:
+		SDLash_HandleGameControllerEvent( event );
 		break;
 
 	case SDL_WINDOWEVENT:
@@ -615,19 +481,19 @@ static void SDLash_EventFilter( SDL_Event *event )
 		switch( event->window.event )
 		{
 		case SDL_WINDOWEVENT_MOVED:
-			if( vid_fullscreen.value == WINDOW_MODE_WINDOWED )
-			{
-				char val[32];
+		{
+			char val[32];
 
-				Q_snprintf( val, sizeof( val ), "%d", event->window.data1 );
-				Cvar_DirectSet( &window_xpos, val );
+			Q_snprintf( val, sizeof( val ), "%d", event->window.data1 );
+			Cvar_DirectSet( &window_xpos, val );
 
-				Q_snprintf( val, sizeof( val ), "%d", event->window.data2 );
-				Cvar_DirectSet( &window_ypos, val );
+			Q_snprintf( val, sizeof( val ), "%d", event->window.data2 );
+			Cvar_DirectSet( &window_ypos, val );
 
+			if ( vid_fullscreen.value == WINDOW_MODE_WINDOWED )
 				Cvar_DirectSet( &vid_maximized, "0" );
-			}
 			break;
+		}
 		case SDL_WINDOWEVENT_MINIMIZED:
 			host.status = HOST_SLEEP;
 			Cvar_DirectSet( &vid_maximized, "0" );
@@ -684,7 +550,7 @@ void Platform_RunEvents( void )
 	SDL_Event event;
 
 	while( !host.crashed && !host.shutdown_issued && SDL_PollEvent( &event ) )
-		SDLash_EventFilter( &event );
+		SDLash_EventHandler( &event );
 
 #if XASH_PSVITA
 	PSVita_InputUpdate();

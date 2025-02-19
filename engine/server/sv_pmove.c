@@ -23,19 +23,6 @@ GNU General Public License for more details.
 static qboolean has_update = false;
 static void SV_GetTrueOrigin( sv_client_t *cl, int edictnum, vec3_t origin );
 
-qboolean SV_PlayerIsFrozen( edict_t *pClient )
-{
-	if( sv_background_freeze.value && sv.background )
-		return true;
-
-	if( FBitSet( host.features, ENGINE_QUAKE_COMPATIBLE ))
-		return false;
-
-	if( FBitSet( pClient->v.flags, FL_FROZEN ))
-		return true;
-	return false;
-}
-
 void SV_ClipPMoveToEntity( physent_t *pe, const vec3_t start, vec3_t mins, vec3_t maxs, const vec3_t end, pmtrace_t *tr )
 {
 	Assert( tr != NULL );
@@ -340,7 +327,7 @@ static void GAME_EXPORT pfnParticle( const float *origin, int color, float life,
 
 	if( !origin )
 	{
-		Con_Reportf( S_ERROR  "SV_StartParticle: NULL origin. Ignored\n" );
+		Con_Reportf( S_ERROR "%s: NULL origin. Ignored\n", __func__ );
 		return;
 	}
 
@@ -571,7 +558,7 @@ static void SV_SetupPMove( playermove_t *pmove, sv_client_t *cl, usercmd_t *ucmd
 	if( pmove->multiplayer ) pmove->onground = -1;
 	pmove->waterlevel = clent->v.waterlevel;
 	pmove->watertype = clent->v.watertype;
-	pmove->maxspeed = svgame.movevars.maxspeed;
+	pmove->maxspeed = svgame.movevars.maxspeed; // GoldSrc uses sv_maxspeed here?
 	pmove->clientmaxspeed = clent->v.maxspeed;
 	pmove->iuser1 = clent->v.iuser1;
 	pmove->iuser2 = clent->v.iuser2;
@@ -671,7 +658,7 @@ static void SV_FinishPMove( playermove_t *pmove, sv_client_t *cl )
 		clent->v.angles[YAW] = clent->v.v_angle[YAW];
 	}
 
-	SV_SetMinMaxSize( clent, pmove->player_mins[pmove->usehull], pmove->player_maxs[pmove->usehull], false );
+	SV_SetMinMaxSize( clent, host.player_mins[pmove->usehull], host.player_maxs[pmove->usehull], false );
 
 	// all next calls ignore footstep sounds
 	pmove->runfuncs = false;
@@ -960,12 +947,6 @@ void SV_RunCmd( sv_client_t *cl, usercmd_t *ucmd, int random_seed )
 	clent->v.button = ucmd->buttons;
 	clent->v.light_level = ucmd->lightlevel;
 	if( ucmd->impulse ) clent->v.impulse = ucmd->impulse;
-
-	if( ucmd->impulse == 204 )
-	{
-		// force client.dll update
-		SV_RefreshUserinfo();
-	}
 
 	svgame.globals->time = cl->timebase;
 	svgame.dllFuncs.pfnPlayerPreThink( clent );

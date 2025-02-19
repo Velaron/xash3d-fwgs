@@ -13,10 +13,11 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 */
 
+#include <stdio.h>
 #include "crtlib.h"
 #include "buildenums.h"
 
-static const char *mon[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+static const char *const mon[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
 static const char mond[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
 
 int Q_buildnum_date( const char *date )
@@ -38,9 +39,31 @@ int Q_buildnum_date( const char *date )
 	b = d + (int)((y - 1) * 365.25f );
 
 	if((( y % 4 ) == 0 ) && m > 1 )
-	{
 		b += 1;
-	}
+	b -= 41728; // Apr 1 2015
+
+	return b;
+}
+
+int Q_buildnum_iso( const char *date )
+{
+	int y, m, d, b, i;
+
+	if( sscanf( date, "%d-%d-%d", &y, &m, &d ) != 3 || y <= 1900 || m <= 0 || d <= 0 )
+		return -1;
+
+	// fixup day and month
+	m--;
+	d--;
+
+	for( i = 0; i < m; i++ )
+		d += mond[i];
+
+	y -= 1900;
+	b = d + (int)((y - 1) * 365.25f );
+
+	if((( y % 4 ) == 0 ) && m > 1 )
+		b += 1;
 	b -= 41728; // Apr 1 2015
 
 	return b;
@@ -57,8 +80,13 @@ int Q_buildnum( void )
 {
 	static int b = 0;
 
-	if( !b )
-		b = Q_buildnum_date( __DATE__ );
+	if( b ) return b;
+
+	if( COM_CheckString( g_buildcommit_date ))
+		b = Q_buildnum_iso( g_buildcommit_date );
+
+	if( b <= 0 )
+		b = Q_buildnum_date( g_build_date );
 
 	return b;
 }
@@ -119,6 +147,10 @@ const char *Q_PlatformStringByID( const int platform )
 		return "nswitch";
 	case PLATFORM_PSVITA:
 		return "psvita";
+	case PLATFORM_WASI:
+		return "wasi";
+	case PLATFORM_SUNOS:
+		return "sunos";
 	}
 
 	assert( 0 );
@@ -204,6 +236,8 @@ const char *Q_ArchitectureStringByID( const int arch, const uint abi, const int 
 			return is64 ? "riscv64d" : "riscv32d";
 		}
 		break;
+	case ARCHITECTURE_WASM:
+		return is64 ? "wasm64" : "wasm32";
 	}
 
 	assert( 0 );
@@ -231,31 +265,5 @@ const char *Q_buildarch( void )
 		false
 #endif
 	);
-}
-
-/*
-=============
-Q_buildcommit
-
-Returns a short hash of current commit in VCS as string
-XASH_BUILD_COMMIT must be passed in quotes
-=============
-*/
-const char *Q_buildcommit( void )
-{
-	return XASH_BUILD_COMMIT;
-}
-
-/*
-=============
-Q_buildbranch
-
-Returns current branch name in VCS as string
-XASH_BUILD_BRANCH must be passed in quotes
-=============
-*/
-const char *Q_buildbranch( void )
-{
-	return XASH_BUILD_BRANCH;
 }
 

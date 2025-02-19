@@ -107,17 +107,18 @@ S_CreateDefaultSound
 */
 static wavdata_t *S_CreateDefaultSound( void )
 {
-	wavdata_t	*sc;
+	wavdata_t *sc;
+	uint samples = SOUND_DMA_SPEED;
+	uint channels = 1;
+	uint width = 2;
+	size_t size = samples * width * channels;
 
-	sc = Mem_Calloc( sndpool, sizeof( wavdata_t ));
-
-	sc->width = 2;
-	sc->channels = 1;
-	sc->loopStart = 0;
+	sc = Mem_Calloc( sndpool, sizeof( wavdata_t ) + size );
+	sc->width = width;
+	sc->channels = channels;
 	sc->rate = SOUND_DMA_SPEED;
-	sc->samples = SOUND_DMA_SPEED;
-	sc->size = sc->samples * sc->width * sc->channels;
-	sc->buffer = Mem_Calloc( sndpool, sc->size );
+	sc->samples = samples;
+	sc->size = size;
 
 	return sc;
 }
@@ -144,8 +145,8 @@ wavdata_t *S_LoadSound( sfx_t *sfx )
 	if( Q_stricmp( sfx->name, "*default" ))
 	{
 		// load it from disk
-		if( s_warn_late_precache.value > 0 && CL_Active() )
-			Con_Printf( S_WARN "S_LoadSound: late precache of %s\n", sfx->name );
+		if( s_warn_late_precache.value > 0 && cls.state == ca_active )
+			Con_Printf( S_WARN "%s: late precache of %s\n", __func__, sfx->name );
 
 		if( sfx->name[0] == '*' )
 			sc = FS_LoadSound( sfx->name + 1, NULL, 0 );
@@ -155,11 +156,11 @@ wavdata_t *S_LoadSound( sfx_t *sfx )
 	if( !sc ) sc = S_CreateDefaultSound();
 
 	if( sc->rate < SOUND_11k ) // some bad sounds
-		Sound_Process( &sc, SOUND_11k, sc->width, SOUND_RESAMPLE );
+		Sound_Process( &sc, SOUND_11k, sc->width, sc->channels, SOUND_RESAMPLE );
 	else if( sc->rate > SOUND_11k && sc->rate < SOUND_22k ) // some bad sounds
-		Sound_Process( &sc, SOUND_22k, sc->width, SOUND_RESAMPLE );
-	else if( sc->rate > SOUND_22k && sc->rate < SOUND_44k ) // some bad sounds
-		Sound_Process( &sc, SOUND_44k, sc->width, SOUND_RESAMPLE );
+		Sound_Process( &sc, SOUND_22k, sc->width, sc->channels, SOUND_RESAMPLE );
+	else if( sc->rate > SOUND_22k && sc->rate != SOUND_44k ) // some bad sounds
+		Sound_Process( &sc, SOUND_44k, sc->width, sc->channels, SOUND_RESAMPLE );
 
 	sfx->cache = sc;
 

@@ -18,7 +18,7 @@ GNU General Public License for more details.
 #include "gl_local.h"
 #include "gl_export.h"
 
-#ifdef XASH_GL4ES
+#if XASH_GL4ES
 #include "gl4es/include/gl4esinit.h"
 #endif
 
@@ -26,6 +26,16 @@ ref_api_t      gEngfuncs;
 ref_globals_t *gpGlobals;
 ref_client_t  *gp_cl;
 ref_host_t    *gp_host;
+
+void _Mem_Free( void *data, const char *filename, int fileline )
+{
+	gEngfuncs._Mem_Free( data, filename, fileline );
+}
+
+void *_Mem_Alloc( poolhandle_t poolptr, size_t size, qboolean clear, const char *filename, int fileline )
+{
+	return gEngfuncs._Mem_Alloc( poolptr, size, clear, filename, fileline );
+}
 
 static void R_ClearScreen( void )
 {
@@ -49,13 +59,16 @@ CL_FillRGBA
 
 =============
 */
-static void CL_FillRGBA( float _x, float _y, float _w, float _h, int r, int g, int b, int a )
+static void CL_FillRGBA( int rendermode, float _x, float _y, float _w, float _h, byte r, byte g, byte b, byte a )
 {
 	pglDisable( GL_TEXTURE_2D );
 	pglEnable( GL_BLEND );
 	pglTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
-	pglBlendFunc( GL_SRC_ALPHA, GL_ONE );
-	pglColor4f( r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f );
+	if( rendermode == kRenderTransAdd )
+		pglBlendFunc( GL_SRC_ALPHA, GL_ONE );
+	else
+		pglBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+	pglColor4ub( r, g, b, a );
 
 	pglBegin( GL_QUADS );
 		pglVertex2f( _x, _y );
@@ -64,35 +77,22 @@ static void CL_FillRGBA( float _x, float _y, float _w, float _h, int r, int g, i
 		pglVertex2f( _x, _y + _h );
 	pglEnd ();
 
-	pglColor3f( 1.0f, 1.0f, 1.0f );
 	pglEnable( GL_TEXTURE_2D );
 	pglDisable( GL_BLEND );
 }
 
-/*
-=============
-pfnFillRGBABlend
-
-=============
-*/
-static void GAME_EXPORT CL_FillRGBABlend( float _x, float _y, float _w, float _h, int r, int g, int b, int a )
+static qboolean Mod_LooksLikeWaterTexture( const char *name )
 {
-	pglDisable( GL_TEXTURE_2D );
-	pglEnable( GL_BLEND );
-	pglTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
-	pglBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
-	pglColor4f( r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f );
+	if(( name[0] == '*' && Q_stricmp( name, REF_DEFAULT_TEXTURE )) || name[0] == '!' )
+		return true;
 
-	pglBegin( GL_QUADS );
-		pglVertex2f( _x, _y );
-		pglVertex2f( _x + _w, _y );
-		pglVertex2f( _x + _w, _y + _h );
-		pglVertex2f( _x, _y + _h );
-	pglEnd ();
+	if( !ENGINE_GET_PARM( PARM_QUAKE_COMPATIBLE ))
+	{
+		if( !Q_strncmp( name, "water", 5 ) || !Q_strnicmp( name, "laser", 5 ))
+			return true;
+	}
 
-	pglColor3f( 1.0f, 1.0f, 1.0f );
-	pglEnable( GL_TEXTURE_2D );
-	pglDisable( GL_BLEND );
+	return false;
 }
 
 static void Mod_BrushUnloadTextures( model_t *mod )
@@ -102,11 +102,17 @@ static void Mod_BrushUnloadTextures( model_t *mod )
 	for( i = 0; i < mod->numtextures; i++ )
 	{
 		texture_t *tx = mod->textures[i];
-		if( !tx || tx->gl_texturenum == tr.defaultTexture )
+		if( !tx )
 			continue; // free slot
 
-		GL_FreeTexture( tx->gl_texturenum );    // main texture
-		GL_FreeTexture( tx->fb_texturenum );    // luma texture
+		if( tx->gl_texturenum != tr.defaultTexture )
+			GL_FreeTexture( tx->gl_texturenum ); // main texture
+
+		if( !Mod_LooksLikeWaterTexture( tx->name ))
+		{
+			GL_FreeTexture( tx->fb_texturenum ); // luma texture
+			GL_FreeTexture( tx->dt_texturenum ); // detail texture
+		}
 	}
 }
 
@@ -136,33 +142,35 @@ static void Mod_UnloadTextures( model_t *mod )
 
 static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte *buf )
 {
-	qboolean loaded = true;
-
-	if( create )
-	{
-		switch( mod->type )
-		{
-			case mod_studio:
-				// Mod_LoadStudioModel( mod, buf, loaded );
-				break;
-			case mod_sprite:
-				Mod_LoadSpriteModel( mod, buf, &loaded, mod->numtexinfo );
-				break;
-			case mod_alias:
-				Mod_LoadAliasModel( mod, buf, &loaded );
-				break;
-			case mod_brush:
-				// Mod_LoadBrushModel( mod, buf, loaded );
-				break;
-			default: gEngfuncs.Host_Error( "Mod_LoadModel: unsupported type %d\n", mod->type );
-		}
-	}
-
-	if( loaded && gEngfuncs.drawFuncs->Mod_ProcessUserData )
-		gEngfuncs.drawFuncs->Mod_ProcessUserData( mod, create, buf );
+	qboolean loaded = false;
 
 	if( !create )
+	{
+		if( gEngfuncs.drawFuncs->Mod_ProcessUserData )
+			gEngfuncs.drawFuncs->Mod_ProcessUserData( mod, false, buf );
 		Mod_UnloadTextures( mod );
+		return true;
+	}
+
+	switch( mod->type )
+	{
+	case mod_studio:
+	case mod_brush:
+		loaded = true;
+		break;
+	case mod_sprite:
+		Mod_LoadSpriteModel( mod, buf, &loaded, mod->numtexinfo );
+		break;
+	case mod_alias:
+		Mod_LoadAliasModel( mod, buf, &loaded );
+		break;
+	default:
+		gEngfuncs.Host_Error( "%s: unsupported type %d\n", __func__, mod->type );
+		return false;
+	}
+
+	if( gEngfuncs.drawFuncs->Mod_ProcessUserData )
+		gEngfuncs.drawFuncs->Mod_ProcessUserData( mod, true, buf );
 
 	return loaded;
 }
@@ -225,18 +233,12 @@ static int GL_RefGetParm( int parm, int arg )
 		return GL_MaxTextureUnits();
 	case PARM_REBUILD_GAMMA:
 		return glConfig.softwareGammaUpdate;
-	case PARM_SURF_SAMPLESIZE:
-		if( arg >= 0 && arg < WORLDMODEL->numsurfaces )
-			return gEngfuncs.Mod_SampleSizeForFace( &WORLDMODEL->surfaces[arg] );
-		return LM_SAMPLE_SIZE;
 	case PARM_GL_CONTEXT_TYPE:
 		return glConfig.context;
 	case PARM_GLES_WRAPPER:
 		return glConfig.wrapper;
 	case PARM_STENCIL_ACTIVE:
 		return glState.stencilEnabled;
-	case PARM_SKY_SPHERE:
-		return FBitSet( tr.world->flags, FWORLD_SKYSPHERE ) && !FBitSet( tr.world->flags, FWORLD_CUSTOM_SKYBOX );
 	case PARM_TEX_FILTERING:
 		if( arg < 0 )
 			return gl_texture_nearest.value == 0.0f;
@@ -328,6 +330,38 @@ static void GAME_EXPORT R_Flush( unsigned int flags )
 	// stub
 }
 
+/*
+=============
+R_SetSkyCloudsTextures
+
+Quake sky cloud texture was processed by the engine,
+remember them for easier access during rendering
+==============
+*/
+static void GAME_EXPORT R_SetSkyCloudsTextures( int solidskyTexture, int alphaskyTexture )
+{
+	tr.solidskyTexture = solidskyTexture;
+	tr.alphaskyTexture = alphaskyTexture;
+}
+
+/*
+===============
+R_SetupSky
+===============
+*/
+static void GAME_EXPORT R_SetupSky( int *skyboxTextures )
+{
+	int i;
+
+	R_UnloadSkybox();
+
+	if( !skyboxTextures )
+		return;
+
+	for( i = 0; i < SKYBOX_MAX_SIDES; i++ )
+		tr.skyboxTextures[i] = skyboxTextures[i];
+}
+
 static qboolean R_SetDisplayTransform( ref_screen_rotation_t rotate, int offset_x, int offset_y, float scale_x, float scale_y )
 {
 	if( !r_fbo.value )
@@ -342,9 +376,39 @@ static qboolean R_SetDisplayTransform( ref_screen_rotation_t rotate, int offset_
 	return true;
 }
 
+static void GAME_EXPORT VGUI_UploadTextureBlock( int drawX, int drawY, const byte *rgba, int blockWidth, int blockHeight )
+{
+	pglTexSubImage2D( GL_TEXTURE_2D, 0, drawX, drawY, blockWidth, blockHeight, GL_RGBA, GL_UNSIGNED_BYTE, rgba );
+}
+
+static void GAME_EXPORT VGUI_SetupDrawing( qboolean rect )
+{
+	pglEnable( GL_BLEND );
+	pglBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+
+	if( rect )
+	{
+		pglDisable( GL_ALPHA_TEST );
+	}
+	else
+	{
+		pglEnable( GL_ALPHA_TEST );
+		pglAlphaFunc( GL_GREATER, 0.0f );
+		pglTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
+	}
+}
+
+static void GAME_EXPORT R_OverrideTextureSourceSize( unsigned int texnum, uint srcWidth, uint srcHeight )
+{
+	gl_texture_t *tx = R_GetTexture( texnum );
+
+	tx->srcWidth = srcWidth;
+	tx->srcHeight = srcHeight;
+}
+
 static void* GAME_EXPORT R_GetProcAddress( const char *name )
 {
-#ifdef XASH_GL4ES
+#if XASH_GL4ES
 	return gl4es_GetProcAddress( name );
 #else // TODO: other wrappers
 	return gEngfuncs.GL_GetProcAddress( name );
@@ -356,7 +420,7 @@ static const char *R_GetConfigName( void )
 	return "opengl";
 }
 
-ref_interface_t gReffuncs =
+static const ref_interface_t gReffuncs =
 {
 	R_Init,
 	R_Shutdown,
@@ -395,9 +459,7 @@ ref_interface_t gReffuncs =
 	R_Set2DMode,
 	R_DrawStretchRaw,
 	R_DrawStretchPic,
-	R_DrawTileClear,
 	CL_FillRGBA,
-	CL_FillRGBABlend,
 	R_WorldToScreen,
 
 	VID_ScreenShot,
@@ -414,14 +476,13 @@ ref_interface_t gReffuncs =
 	R_StudioLerpMovement,
 	CL_InitStudioAPI,
 
-	R_InitSkyClouds,
+	R_SetSkyCloudsTextures,
 	GL_SubdivideSurface,
 	CL_RunLightStyles,
 
 	R_GetSpriteParms,
 	R_GetSpriteTexture,
 
-	Mod_LoadMapSprite,
 	Mod_ProcessRenderData,
 	Mod_StudioLoadTextures,
 
@@ -446,6 +507,7 @@ ref_interface_t gReffuncs =
 	GL_LoadTextureArray,
 	GL_CreateTextureArray,
 	GL_FreeTexture,
+	R_OverrideTextureSourceSize,
 
 	DrawSingleDecal,
 	R_DecalSetupVerts,
@@ -491,19 +553,8 @@ ref_interface_t gReffuncs =
 	TriFogParams,
 	TriCullFace,
 
-	VGUI_DrawInit,
-	VGUI_DrawShutdown,
-	VGUI_SetupDrawingText,
-	VGUI_SetupDrawingRect,
-	VGUI_SetupDrawingImage,
-	VGUI_BindTexture,
-	VGUI_EnableTexture,
-	VGUI_CreateTexture,
-	VGUI_UploadTexture,
+	VGUI_SetupDrawing,
 	VGUI_UploadTextureBlock,
-	VGUI_DrawQuad,
-	VGUI_GetTextureSizes,
-	VGUI_GenerateTexture,
 };
 
 int EXPORT GetRefAPI( int version, ref_interface_t *funcs, ref_api_t *engfuncs, ref_globals_t *globals );
@@ -513,8 +564,8 @@ int EXPORT GetRefAPI( int version, ref_interface_t *funcs, ref_api_t *engfuncs, 
 		return 0;
 
 	// fill in our callbacks
-	memcpy( funcs, &gReffuncs, sizeof( ref_interface_t ));
-	memcpy( &gEngfuncs, engfuncs, sizeof( ref_api_t ));
+	*funcs = gReffuncs;
+	gEngfuncs = *engfuncs;
 	gpGlobals = globals;
 
 	gp_cl = (ref_client_t *)ENGINE_GET_PARM( PARM_GET_CLIENT_PTR );

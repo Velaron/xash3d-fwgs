@@ -30,6 +30,8 @@ def configure(conf):
 	conf.find_program('vita-mksfoex', var='MKSFOEX')
 	conf.find_program('vita-pack-vpk', var='PACKVPK')
 
+	conf.env.SCESYS_ST = '-a%s=sce_sys'
+
 class mkvelf(Task.Task):
 	color = 'CYAN'
 	run_str = '${ELF_CREATE} -g ${YMLFILE} ${ELFFILE} ${TGT}'
@@ -45,9 +47,9 @@ class mksfoex(Task.Task):
 
 class mkvpk(Task.Task):
 	color = 'CYAN'
-	run_str = '${PACKVPK} -s ${SFOFILE} -b ${FSELFFILE} -a ${SCESYS}=sce_sys ${TGT}'
+	run_str = '${PACKVPK} -s ${SFOFILE} -b ${FSELFFILE} ${SCESYS_ST:SCESYS} ${TGT}'
 
-@TaskGen.feature('cxxprogram')
+@TaskGen.feature('cxxprogram', 'cprogram')
 @TaskGen.after_method('apply_link')
 def apply_velf(self):
 	elffile = self.link_task.outputs[0]
@@ -64,7 +66,7 @@ def apply_velf(self):
 	self.velf_task = self.create_task('mkvelf', in_nodes)
 	self.velf_task.set_outputs(out_nodes)
 
-@TaskGen.feature('cxxprogram')
+@TaskGen.feature('cxxprogram', 'cprogram')
 @TaskGen.after_method('apply_velf')
 def apply_fself(self):
 	velffile = self.velf_task.outputs[0]
@@ -78,13 +80,13 @@ def apply_fself(self):
 	self.fself_task = self.create_task('mkfself', in_nodes)
 	self.fself_task.set_outputs(out_nodes)
 
-@TaskGen.feature('cxxprogram')
+@TaskGen.feature('cxxprogram', 'cprogram')
 @TaskGen.after_method('apply_fself')
 def apply_sfo(self):
 	fselffile = self.fself_task.outputs[0]
 	in_nodes = [fselffile]
-	scetitleid = getattr(self, 'title_id', None)
-	sceappname = getattr(self, 'app_name', None)
+	scetitleid = getattr(self, 'title_id', 'TEST10000')
+	sceappname = getattr(self, 'app_name', 'test')
 
 	sfofile = fselffile.change_ext('.sfo')
 	out_nodes = [sfofile]
@@ -96,7 +98,7 @@ def apply_sfo(self):
 	self.sfo_task = self.create_task('mksfoex', in_nodes)
 	self.sfo_task.set_outputs(out_nodes)
 
-@TaskGen.feature('cxxprogram')
+@TaskGen.feature('cxxprogram', 'cprogram')
 @TaskGen.after_method('apply_sfo')
 def apply_vpk(self):
 	fselffile = self.fself_task.outputs[0]
@@ -107,8 +109,14 @@ def apply_vpk(self):
 	vpkfile = sfofile.change_ext('.vpk')
 	out_nodes = [vpkfile]
 
-	if scesysdir: self.env.SCESYS = str(scesysdir)
+	if scesysdir:
+		self.env.SCESYS = [str(scesysdir)]
 	self.env.VPKFILE = str(vpkfile)
 
-	self.vpk_task = self.create_task('mkvpk', in_nodes)
+	tsk = self.vpk_task = self.create_task('mkvpk', in_nodes)
 	self.vpk_task.set_outputs(out_nodes)
+
+	inst_to = getattr(self, 'special_install_path', None)
+	if inst_to:
+		self.add_install_files(install_to=inst_to,
+			install_from=tsk.outputs[:], chmod=Utils.O755, task=tsk)

@@ -44,7 +44,7 @@ void R_AllowFog( qboolean allowed )
 {
 	if( allowed )
 	{
-		if( glState.isFogEnabled )
+		if( glState.isFogEnabled && gl_fog.value )
 			pglEnable( GL_FOG );
 	}
 	else
@@ -600,6 +600,7 @@ watertexture to grab fog values from it
 static gl_texture_t *R_RecursiveFindWaterTexture( const mnode_t *node, const mnode_t *ignore, qboolean down )
 {
 	gl_texture_t *tex = NULL;
+	mnode_t *children[2];
 
 	// assure the initial node is not null
 	// we could check it here, but we would rather check it
@@ -637,15 +638,17 @@ static gl_texture_t *R_RecursiveFindWaterTexture( const mnode_t *node, const mno
 
 	// this is a regular node
 	// traverse children
-	if( node->children[0] && ( node->children[0] != ignore ))
+	node_children( children, node, WORLDMODEL );
+
+	if( children[0] && ( children[0] != ignore ))
 	{
-		tex = R_RecursiveFindWaterTexture( node->children[0], node, true );
+		tex = R_RecursiveFindWaterTexture( children[0], node, true );
 		if( tex ) return tex;
 	}
 
-	if( node->children[1] && ( node->children[1] != ignore ))
+	if( children[1] && ( children[1] != ignore ))
 	{
-		tex = R_RecursiveFindWaterTexture( node->children[1], node, true );
+		tex = R_RecursiveFindWaterTexture( children[1], node, true );
 		if( tex )	return tex;
 	}
 
@@ -800,7 +803,8 @@ R_DrawFog
 */
 void R_DrawFog( void )
 {
-	if( !RI.fogEnabled ) return;
+	if( !RI.fogEnabled || !gl_fog.value )
+		return;
 
 	pglEnable( GL_FOG );
 	if( ENGINE_GET_PARM( PARM_QUAKE_COMPATIBLE ))
@@ -959,7 +963,7 @@ R_SetupRefParams must be called right before
 void R_RenderScene( void )
 {
 	if( !WORLDMODEL && RI.drawWorld )
-		gEngfuncs.Host_Error( "R_RenderView: NULL worldmodel\n" );
+		gEngfuncs.Host_Error( "%s: NULL worldmodel\n", __func__ );
 
 	// frametime is valid only for normal pass
 	if( RP_NORMALPASS( ))
@@ -1010,21 +1014,32 @@ void R_GammaChanged( qboolean do_reset_gamma )
 	}
 }
 
-static void R_CheckGamma( void )
+static void R_CheckCvars( void )
 {
 	qboolean rebuild = false;
 
 	if( FBitSet( gl_overbright.flags, FCVAR_CHANGED ))
 	{
-		rebuild = true;
 		ClearBits( gl_overbright.flags, FCVAR_CHANGED );
+		rebuild = true;
 	}
 
-	if( gl_overbright.value && ( FBitSet( r_vbo.flags, FCVAR_CHANGED ) || FBitSet( r_vbo_overbrightmode.flags, FCVAR_CHANGED ) ) )
+	if( FBitSet( r_vbo.flags, FCVAR_CHANGED ))
 	{
-		rebuild = true;
 		ClearBits( r_vbo.flags, FCVAR_CHANGED );
+
+		R_EnableVBO( r_vbo.value ? true : false );
+		if( R_HasEnabledVBO( ))
+			R_GenerateVBO();
+
+		if( gl_overbright.value )
+			rebuild = true;
+	}
+
+	if( FBitSet( r_vbo_overbrightmode.flags, FCVAR_CHANGED ) && gl_overbright.value )
+	{
 		ClearBits( r_vbo_overbrightmode.flags, FCVAR_CHANGED );
+		rebuild = true;
 	}
 
 	if( rebuild )
@@ -1046,7 +1061,7 @@ void R_BeginFrame( qboolean clearScene )
 		pglClear( GL_COLOR_BUFFER_BIT );
 	}
 
-	R_CheckGamma();
+	R_CheckCvars();
 
 	GL_FBOBeginFrame();
 

@@ -33,9 +33,9 @@ typedef struct
 } player_model_t;
 
 // never gonna change, just shut up const warning
-cvar_t r_shadows = { (char *)"r_shadows", (char *)"0", 0 };
+CVAR_DEFINE_AUTO( r_shadows, "0", 0, "draw ugly shadows" );
 
-static vec3_t hullcolor[8] =
+static const vec3_t hullcolor[8] =
 {
 { 1.0f, 1.0f, 1.0f },
 { 1.0f, 0.5f, 0.5f },
@@ -153,9 +153,6 @@ void R_StudioInit( void )
 #endif
 
 	Matrix3x4_LoadIdentity( g_studio.rotationmatrix );
-
-	// g-cont. cvar disabled by Valve
-//	gEngfuncs.Cvar_RegisterVariable( &r_shadows );
 
 	g_studio.interpolate = true;
 	g_studio.framecount = 0;
@@ -819,10 +816,7 @@ static void R_StudioCalcRotations( cl_entity_t *e, float pos[][3], vec4_t *q, ms
 	R_StudioCalcBoneAdj( dadt, adj, e->curstate.controller, e->latched.prevcontroller, e->mouth.mouthopen );
 
 	for( i = 0; i < m_pStudioHeader->numbones; i++, pbone++, panim++ )
-	{
-		R_StudioCalcBoneQuaternion( frame, s, pbone, panim, adj, q[i] );
-		R_StudioCalcBonePosition( frame, s, pbone, panim, adj, pos[i] );
-	}
+		R_StudioCalcBones( frame, s, pbone, panim, adj, pos[i], q[i] );
 
 	if( pseqdesc->motiontype & STUDIO_X ) pos[pseqdesc->motionbone][0] = 0.0f;
 	if( pseqdesc->motiontype & STUDIO_Y ) pos[pseqdesc->motionbone][1] = 0.0f;
@@ -1453,7 +1447,7 @@ static void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 
 	for( lnum = 0; lnum < MAX_DLIGHTS; lnum++ )
 	{
-		dl = gEngfuncs.GetDynamicLight( lnum );
+		dl = &tr.dlights[lnum];
 
 		if( dl->die < g_studio.time || !r_dynamic->value )
 			continue;
@@ -1520,7 +1514,6 @@ static void R_StudioEntityLight( alight_t *lightinfo )
 	float		lstrength[MAX_LOCALLIGHTS];
 	cl_entity_t	*ent = RI.currententity;
 	vec3_t		mid, origin, pos;
-	dlight_t		*el;
 
 	g_studio.numlocallights = 0;
 
@@ -1536,7 +1529,7 @@ static void R_StudioEntityLight( alight_t *lightinfo )
 
 	for( lnum = 0; lnum < MAX_ELIGHTS; lnum++ )
 	{
-		el = gEngfuncs.GetEntityLight( lnum );
+		dlight_t *el = &tr.elights[lnum];
 
 		if( el->die < g_studio.time || el->radius <= 0.0f )
 			continue;
@@ -1575,9 +1568,9 @@ static void R_StudioEntityLight( alight_t *lightinfo )
 
 			if( k != -1 )
 			{
-				g_studio.locallightcolor[k][0] = gEngfuncs.LinearGammaTable( el->color.r << 2 );
-				g_studio.locallightcolor[k][1] = gEngfuncs.LinearGammaTable( el->color.g << 2 );
-				g_studio.locallightcolor[k][2] = gEngfuncs.LinearGammaTable( el->color.b << 2 );
+				g_studio.locallightcolor[k][0] = LinearGammaTable( el->color.r << 2 );
+				g_studio.locallightcolor[k][1] = LinearGammaTable( el->color.g << 2 );
+				g_studio.locallightcolor[k][2] = LinearGammaTable( el->color.b << 2 );
 				g_studio.locallightR2[k] = r2;
 				g_studio.locallight[k] = el;
 				lstrength[k] = minstrength;
@@ -1673,7 +1666,7 @@ static void R_StudioLighting( float *lv, int bone, int flags, vec3_t normal )
 
 	illum = Q_min( illum, 255.0f );
 
-	*lv = gEngfuncs.LightToTexGammaEx( illum * 4 ) / 1023.0f;
+	*lv = LightToTexGamma( illum * 4 ) / 1023.0f;
 }
 
 /*
@@ -1728,12 +1721,12 @@ static void R_LightLambert( vec4_t light[MAX_LOCALLIGHTS], const vec3_t normal, 
 	{
 		for( i = 0; i < 3; i++ )
 		{
-			float c = finalLight[i] + gEngfuncs.LinearGammaTable( color[i] * 1023.0f );
+			float c = finalLight[i] + LinearGammaTable( color[i] * 1023.0f );
 
 			if( c > 1023.0f )
 				out[i] = 255;
 			else
-				out[i] = gEngfuncs.ScreenGammaTable( c ) >> 2;
+				out[i] = ScreenGammaTable( c ) >> 2;
 		}
 	}
 	else
@@ -2657,8 +2650,11 @@ R_StudioSetupPlayerModel
 */
 static model_t *R_StudioSetupPlayerModel( int index )
 {
-	player_info_t	*info = gEngfuncs.pfnPlayerInfo( index );
-	player_model_t	*state;
+	player_info_t  *info = gEngfuncs.pfnPlayerInfo( index );
+	player_model_t *state;
+
+	if( index < 0 || index >= gp_cl->maxclients )
+		return NULL;
 
 	state = &g_studio.player_models[index];
 
@@ -2674,7 +2670,8 @@ static model_t *R_StudioSetupPlayerModel( int index )
 
 			if( gEngfuncs.fsapi->FileExists( state->modelname, false ))
 				state->model = gEngfuncs.Mod_ForName( state->modelname, false, true );
-			else state->model = NULL;
+			else
+				state->model = NULL;
 
 			if( !state->model )
 				state->model = RI.currententity->model;
@@ -2699,18 +2696,20 @@ check for texture flags
 */
 int R_GetEntityRenderMode( cl_entity_t *ent )
 {
-	int		i, opaque, trans;
-	mstudiotexture_t	*ptexture;
-	cl_entity_t	*oldent;
-	model_t		*model;
-	studiohdr_t	*phdr;
+	int              i, opaque, trans;
+	mstudiotexture_t *ptexture;
+	cl_entity_t      *oldent;
+	model_t          *model = NULL;
+	studiohdr_t      *phdr;
 
 	oldent = RI.currententity;
 	RI.currententity = ent;
 
 	if( ent->player ) // check it for real playermodel
 		model = R_StudioSetupPlayerModel( ent->curstate.number - 1 );
-	else model = ent->model;
+
+	if( !model )
+		model = ent->model;
 
 	RI.currententity = oldent;
 
@@ -3389,7 +3388,8 @@ static int R_StudioDrawPlayer( int flags, entity_state_t *pplayer )
 
 	if( flags & STUDIO_RENDER )
 	{
-		if( cl_himodels->value && RI.currentmodel != RI.currententity->model  )
+		// change body if it's a menu entity
+		if( cl_himodels->value && ( RI.currentmodel != RI.currententity->model || !RI.drawWorld ))
 		{
 			// show highest resolution multiplayer model
 			RI.currententity->curstate.body = 255;
@@ -3729,6 +3729,7 @@ static void R_StudioLoadTexture( model_t *mod, studiohdr_t *phdr, mstudiotexture
 	int		flags = 0;
 	char		texname[128], name[128], mdlname[128];
 	texture_t		*tx = NULL;
+	qboolean load_external = false;
 
 	if( ptexture->flags & STUDIO_NF_NORMALMAP )
 		flags |= (TF_NORMALMAP);
@@ -3787,17 +3788,31 @@ static void R_StudioLoadTexture( model_t *mod, studiohdr_t *phdr, mstudiotexture
 	if( FBitSet( ptexture->flags, STUDIO_NF_NOMIPS ))
 		SetBits( flags, TF_NOMIPMAP );
 
-	// NOTE: replace index with pointer to start of imagebuffer, ImageLib expected it
-	//ptexture->index = (int)((byte *)phdr) + ptexture->index;
-	gEngfuncs.Image_SetMDLPointer((byte *)phdr + ptexture->index);
-	size = sizeof( mstudiotexture_t ) + ptexture->width * ptexture->height + 768;
-
 	if( FBitSet( gp_host->features, ENGINE_IMPROVED_LINETRACE ) && FBitSet( ptexture->flags, STUDIO_NF_MASKED ))
 		flags |= TF_KEEP_SOURCE; // Paranoia2 texture alpha-tracing
 
-	// build the texname
-	Q_snprintf( texname, sizeof( texname ), "#%s/%s.mdl", mdlname, name );
-	ptexture->index = GL_LoadTexture( texname, (byte *)ptexture, size, flags );
+	// NOTE: colormaps must have the palette for properly work. Ignore them
+	if( Mod_AllowMaterials( ) && !FBitSet( ptexture->flags, STUDIO_NF_COLORMAP ))
+	{
+		if( R_SearchForTextureReplacement( texname, sizeof( texname ), mdlname, "materials/%s/%s.tga", mdlname, name ))
+		{
+			int gl_texturenum = GL_LoadTexture( texname, NULL, 0, flags );
+			R_TextureReplacementReport( mdlname, gl_texturenum, texname );
+			if(( load_external = gl_texturenum != 0 ))
+				ptexture->index = gl_texturenum;
+		}
+	}
+
+	if( !load_external )
+	{
+		// NOTE: replace index with pointer to start of imagebuffer, ImageLib expected it
+		gEngfuncs.Image_SetMDLPointer((byte *)phdr + ptexture->index);
+		size = sizeof( mstudiotexture_t ) + ptexture->width * ptexture->height + 768;
+
+		// build the texname
+		Q_snprintf( texname, sizeof( texname ), "#%s/%s.mdl", mdlname, name );
+		ptexture->index = GL_LoadTexture( texname, (byte *)ptexture, size, flags );
+	}
 
 	if( !ptexture->index )
 	{

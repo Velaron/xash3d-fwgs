@@ -18,15 +18,14 @@ GNU General Public License for more details.
 #include "com_model.h"
 #include "xash3d_mathlib.h"
 #include "eiface.h"
+#include "studio.h"
 
 #define NUM_HULL_ROUNDS	ARRAYSIZE( hull_table )
 #define HULL_PRECISION	4
 
-vec3_t vec3_origin = { 0, 0, 0 };
+static const word hull_table[] = { 2, 4, 6, 8, 12, 16, 18, 24, 28, 32, 36, 40, 48, 54, 56, 60, 64, 72, 80, 112, 120, 128, 140, 176 };
 
-static word hull_table[] = { 2, 4, 6, 8, 12, 16, 18, 24, 28, 32, 36, 40, 48, 54, 56, 60, 64, 72, 80, 112, 120, 128, 140, 176 };
-
-int boxpnt[6][4] =
+const int boxpnt[6][4] =
 {
 { 0, 4, 6, 2 }, // +X
 { 0, 1, 5, 4 }, // +Y
@@ -42,18 +41,7 @@ const float m_bytenormals[NUMVERTEXNORMALS][3] =
 #include "anorms.h"
 };
 
-/*
-=================
-anglemod
-=================
-*/
-float anglemod( float a )
-{
-	a = (360.0f / 65536) * ((int)(a*(65536/360.0f)) & 65535);
-	return a;
-}
-
-word FloatToHalf( float v )
+uint16_t FloatToHalf( float v )
 {
 	unsigned int	i = FloatAsUint( v );
 	unsigned int	e = (i >> 23) & 0x00ff;
@@ -69,7 +57,7 @@ word FloatToHalf( float v )
 	return h;
 }
 
-float HalfToFloat( word h )
+float HalfToFloat( uint16_t h )
 {
 	unsigned int	f = (h << 16) & 0x80000000;
 	unsigned int	em = h & 0x7fff;
@@ -153,57 +141,6 @@ void RoundUpHullSize( vec3_t size )
 
 /*
 =================
-SignbitsForPlane
-
-fast box on planeside test
-=================
-*/
-int SignbitsForPlane( const vec3_t normal )
-{
-	int	bits, i;
-
-	for( bits = i = 0; i < 3; i++ )
-		if( normal[i] < 0.0f ) bits |= 1<<i;
-	return bits;
-}
-
-/*
-=================
-PlaneTypeForNormal
-=================
-*/
-int PlaneTypeForNormal( const vec3_t normal )
-{
-	if( normal[0] == 1.0f )
-		return PLANE_X;
-	if( normal[1] == 1.0f )
-		return PLANE_Y;
-	if( normal[2] == 1.0f )
-		return PLANE_Z;
-	return PLANE_NONAXIAL;
-}
-
-/*
-=================
-NearestPOW
-=================
-*/
-int NearestPOW( int value, qboolean roundDown )
-{
-	int	n = 1;
-
-	if( value <= 0 ) return 1;
-	while( n < value ) n <<= 1;
-
-	if( roundDown )
-	{
-		if( n > value ) n >>= 1;
-	}
-	return n;
-}
-
-/*
-=================
 rsqrt
 =================
 */
@@ -224,43 +161,6 @@ float rsqrt( float number )
 	return y;
 }
 
-/*
-==============
-VectorCompareEpsilon
-
-==============
-*/
-qboolean VectorCompareEpsilon( const vec3_t vec1, const vec3_t vec2, vec_t epsilon )
-{
-	vec_t	ax, ay, az;
-
-	ax = fabs( vec1[0] - vec2[0] );
-	ay = fabs( vec1[1] - vec2[1] );
-	az = fabs( vec1[2] - vec2[2] );
-
-	if(( ax <= epsilon ) && ( ay <= epsilon ) && ( az <= epsilon ))
-		return true;
-	return false;
-}
-
-float VectorNormalizeLength2( const vec3_t v, vec3_t out )
-{
-	float	length, ilength;
-
-	length = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
-	length = sqrt( length );
-
-	if( length )
-	{
-		ilength = 1.0f / length;
-		out[0] = v[0] * ilength;
-		out[1] = v[1] * ilength;
-		out[2] = v[2] * ilength;
-	}
-
-	return length;
-}
-
 void VectorVectors( const vec3_t forward, vec3_t right, vec3_t up )
 {
 	float	d;
@@ -274,42 +174,6 @@ void VectorVectors( const vec3_t forward, vec3_t right, vec3_t up )
 	VectorNormalize( right );
 	CrossProduct( right, forward, up );
 	VectorNormalize( up );
-}
-
-/*
-=================
-AngleVectors
-
-=================
-*/
-void GAME_EXPORT AngleVectors( const vec3_t angles, vec3_t forward, vec3_t right, vec3_t up )
-{
-	float	sr, sp, sy, cr, cp, cy;
-
-	SinCos( DEG2RAD( angles[YAW] ), &sy, &cy );
-	SinCos( DEG2RAD( angles[PITCH] ), &sp, &cp );
-	SinCos( DEG2RAD( angles[ROLL] ), &sr, &cr );
-
-	if( forward )
-	{
-		forward[0] = cp * cy;
-		forward[1] = cp * sy;
-		forward[2] = -sp;
-	}
-
-	if( right )
-	{
-		right[0] = (-1.0f * sr * sp * cy + -1.0f * cr * -sy );
-		right[1] = (-1.0f * sr * sp * sy + -1.0f * cr * cy );
-		right[2] = (-1.0f * sr * cp);
-	}
-
-	if( up )
-	{
-		up[0] = (cr * sp * cy + -sr * -sy );
-		up[1] = (cr * sp * sy + -sr * cy );
-		up[2] = (cr * cp);
-	}
 }
 
 /*
@@ -386,39 +250,6 @@ void VectorsAngles( const vec3_t forward, const vec3_t right, const vec3_t up, v
 //
 /*
 =================
-AddPointToBounds
-=================
-*/
-void AddPointToBounds( const vec3_t v, vec3_t mins, vec3_t maxs )
-{
-	float	val;
-	int	i;
-
-	for( i = 0; i < 3; i++ )
-	{
-		val = v[i];
-		if( val < mins[i] ) mins[i] = val;
-		if( val > maxs[i] ) maxs[i] = val;
-	}
-}
-
-/*
-=================
-ExpandBounds (not used anywhere?)
-=================
-*/
-void ExpandBounds( vec3_t mins, vec3_t maxs, float offset )
-{
-	mins[0] -= offset;
-	mins[1] -= offset;
-	mins[2] -= offset;
-	maxs[0] += offset;
-	maxs[1] += offset;
-	maxs[2] += offset;
-}
-
-/*
-=================
 SphereIntersect
 =================
 */
@@ -457,67 +288,9 @@ void PlaneIntersect( const mplane_t *plane, const vec3_t p0, const vec3_t p1, ve
 	VectorMA( p0, sect, p1, out );
 }
 
-/*
-=================
-RadiusFromBounds
-=================
-*/
-float RadiusFromBounds( const vec3_t mins, const vec3_t maxs )
-{
-	vec3_t	corner;
-	int	i;
-
-	for( i = 0; i < 3; i++ )
-	{
-		corner[i] = fabs( mins[i] ) > fabs( maxs[i] ) ? fabs( mins[i] ) : fabs( maxs[i] );
-	}
-	return VectorLength( corner );
-}
-
 //
 // studio utils
 //
-/*
-====================
-AngleQuaternion
-
-====================
-*/
-void AngleQuaternion( const vec3_t angles, vec4_t q, qboolean studio )
-{
-	float	sr, sp, sy, cr, cp, cy;
-
-	if( studio )
-	{
-		SinCos( angles[ROLL] * 0.5f, &sy, &cy );
-		SinCos( angles[YAW] * 0.5f, &sp, &cp );
-		SinCos( angles[PITCH] * 0.5f, &sr, &cr );
-	}
-	else
-	{
-		SinCos( DEG2RAD( angles[YAW] ) * 0.5f, &sy, &cy );
-		SinCos( DEG2RAD( angles[PITCH] ) * 0.5f, &sp, &cp );
-		SinCos( DEG2RAD( angles[ROLL] ) * 0.5f, &sr, &cr );
-	}
-
-	q[0] = sr * cp * cy - cr * sp * sy; // X
-	q[1] = cr * sp * cy + sr * cp * sy; // Y
-	q[2] = cr * cp * sy - sr * sp * cy; // Z
-	q[3] = cr * cp * cy + sr * sp * sy; // W
-}
-
-/*
-====================
-QuaternionAngle
-
-====================
-*/
-void QuaternionAngle( const vec4_t q, vec3_t angles )
-{
-	matrix3x4	mat;
-	Matrix3x4_FromOriginQuat( mat, q, vec3_origin );
-	Matrix3x4_AnglesFromMatrix( mat, angles );
-}
 
 /*
 ====================
@@ -680,193 +453,83 @@ int BoxOnPlaneSide( const vec3_t emins, const vec3_t emaxs, const mplane_t *p )
 	return sides;
 }
 
-/*
-====================
-StudioSlerpBones
-
-====================
-*/
-void R_StudioSlerpBones( int numbones, vec4_t q1[], float pos1[][3], const vec4_t q2[], const float pos2[][3], float s )
+void R_StudioCalcBones( int frame, float s, const mstudiobone_t *pbone, const mstudioanim_t *panim, const float *adj, vec3_t pos, vec4_t q )
 {
-	int	i;
+	float v1[6], v2[6];
+	int i, max;
 
-	s = bound( 0.0f, s, 1.0f );
+	max = q != NULL ? 6 : 3;
 
-	for( i = 0; i < numbones; i++ )
+	for( i = 0; i < max; i++ )
 	{
-		QuaternionSlerp( q1[i], q2[i], s, q1[i] );
-		VectorLerp( pos1[i], s, pos2[i], pos1[i] );
-	}
-}
+		mstudioanimvalue_t *panimvalue = (mstudioanimvalue_t *)((byte *)panim + panim->offset[i] );
+		int j = frame;
+		float fadj = 0.0f;
 
-/*
-====================
-StudioCalcBoneQuaternion
+		if( pbone->bonecontroller[i] >= 0 && adj != NULL )
+			fadj = adj[pbone->bonecontroller[i]];
 
-====================
-*/
-void R_StudioCalcBoneQuaternion( int frame, float s, const mstudiobone_t *pbone, const mstudioanim_t *panim, const float *adj, vec4_t q )
-{
-	vec3_t	angles1;
-	vec3_t	angles2;
-	int	j, k;
-
-	for( j = 0; j < 3; j++ )
-	{
-		if( !panim || panim->offset[j+3] == 0 )
+		if( panim->offset[i] == 0 )
 		{
-			angles2[j] = angles1[j] = pbone->value[j+3]; // default;
+			v1[i] = v2[i] = pbone->value[i] + fadj;
+			continue;
+		}
+
+		if( panimvalue->num.total < panimvalue->num.valid )
+			j = 0;
+
+		while( panimvalue->num.total <= j )
+		{
+			j -= panimvalue->num.total;
+			panimvalue += panimvalue->num.valid + 1;
+
+			if( panimvalue->num.total < panimvalue->num.valid )
+				j = 0;
+		}
+
+		if( panimvalue->num.valid > j )
+		{
+			v1[i] = panimvalue[j + 1].value;
+
+			if( panimvalue->num.valid > j + 1 )
+				v2[i] = panimvalue[j + 2].value;
+			else if( panimvalue->num.total > j + 1 )
+				v2[i] = v1[i];
+			else
+				v2[i] = panimvalue[panimvalue->num.valid + 2].value;
 		}
 		else
 		{
-			mstudioanimvalue_t *panimvalue = (mstudioanimvalue_t *)((byte *)panim + panim->offset[j+3]);
+			v1[i] = panimvalue[panimvalue->num.valid].value;
 
-			k = frame;
-
-			// debug
-			if( panimvalue->num.total < panimvalue->num.valid )
-				k = 0;
-
-			// find span of values that includes the frame we want
-			while( panimvalue->num.total <= k )
-			{
-				k -= panimvalue->num.total;
-				panimvalue += panimvalue->num.valid + 1;
-
-				// debug
-				if( panimvalue->num.total < panimvalue->num.valid )
-					k = 0;
-			}
-
-			// bah, missing blend!
-			if( panimvalue->num.valid > k )
-			{
-				angles1[j] = panimvalue[k+1].value;
-
-				if( panimvalue->num.valid > k + 1 )
-				{
-					angles2[j] = panimvalue[k+2].value;
-				}
-				else
-				{
-					if( panimvalue->num.total > k + 1 )
-						angles2[j] = angles1[j];
-					else angles2[j] = panimvalue[panimvalue->num.valid+2].value;
-				}
-			}
+			if( panimvalue->num.total > j + 1 )
+				v2[i] = v1[i];
 			else
-			{
-				angles1[j] = panimvalue[panimvalue->num.valid].value;
-				if( panimvalue->num.total > k + 1 )
-					angles2[j] = angles1[j];
-				else angles2[j] = panimvalue[panimvalue->num.valid+2].value;
-			}
-
-			angles1[j] = pbone->value[j+3] + angles1[j] * pbone->scale[j+3];
-			angles2[j] = pbone->value[j+3] + angles2[j] * pbone->scale[j+3];
+				v2[i] = panimvalue[panimvalue->num.valid + 2].value;
 		}
 
-		if( pbone->bonecontroller[j+3] != -1 && adj != NULL )
-		{
-			angles1[j] += adj[pbone->bonecontroller[j+3]];
-			angles2[j] += adj[pbone->bonecontroller[j+3]];
-		}
+		v1[i] = pbone->value[i] + v1[i] * pbone->scale[i] + fadj;
+		v2[i] = pbone->value[i] + v2[i] * pbone->scale[i] + fadj;
 	}
 
-	if( !VectorCompare( angles1, angles2 ))
-	{
-		vec4_t	q1, q2;
-
-		AngleQuaternion( angles1, q1, true );
-		AngleQuaternion( angles2, q2, true );
-		QuaternionSlerp( q1, q2, s, q );
-	}
+	if( !VectorCompare( v1, v2 ))
+		VectorLerp( v1, s, v2, pos );
 	else
+		VectorCopy( v1, pos );
+
+	if( q != NULL )
 	{
-		AngleQuaternion( angles1, q, true );
-	}
-}
-
-/*
-====================
-StudioCalcBonePosition
-
-====================
-*/
-void R_StudioCalcBonePosition( int frame, float s, const mstudiobone_t *pbone, const mstudioanim_t *panim, const float *adj, vec3_t pos )
-{
-	vec3_t	origin1;
-	vec3_t	origin2;
-	int	j, k;
-
-	for( j = 0; j < 3; j++ )
-	{
-		if( !panim || panim->offset[j] == 0 )
+		if( !VectorCompare( &v1[3], &v2[3] ))
 		{
-			origin2[j] = origin1[j] = pbone->value[j]; // default;
+			vec4_t q1, q2;
+
+			AngleQuaternion( &v1[3], q1, true );
+			AngleQuaternion( &v2[3], q2, true );
+			QuaternionSlerp( q1, q2, s, q );
 		}
 		else
 		{
-			mstudioanimvalue_t	*panimvalue = (mstudioanimvalue_t *)((byte *)panim + panim->offset[j]);
-
-			k = frame;
-
-			// debug
-			if( panimvalue->num.total < panimvalue->num.valid )
-				k = 0;
-
-			// find span of values that includes the frame we want
-			while( panimvalue->num.total <= k )
-			{
-				k -= panimvalue->num.total;
-				panimvalue += panimvalue->num.valid + 1;
-
-				// debug
-				if( panimvalue->num.total < panimvalue->num.valid )
-					k = 0;
-			}
-
-			// bah, missing blend!
-			if( panimvalue->num.valid > k )
-			{
-				origin1[j] = panimvalue[k+1].value;
-
-				if( panimvalue->num.valid > k + 1 )
-				{
-					origin2[j] = panimvalue[k+2].value;
-				}
-				else
-				{
-					if( panimvalue->num.total > k + 1 )
-						origin2[j] = origin1[j];
-					else origin2[j] = panimvalue[panimvalue->num.valid+2].value;
-				}
-			}
-			else
-			{
-				origin1[j] = panimvalue[panimvalue->num.valid].value;
-				if( panimvalue->num.total > k + 1 )
-					origin2[j] = origin1[j];
-				else origin2[j] = panimvalue[panimvalue->num.valid+2].value;
-			}
-
-			origin1[j] = pbone->value[j] + origin1[j] * pbone->scale[j];
-			origin2[j] = pbone->value[j] + origin2[j] * pbone->scale[j];
+			AngleQuaternion( &v1[3], q, true );
 		}
-
-		if( pbone->bonecontroller[j] != -1 && adj != NULL )
-		{
-			origin1[j] += adj[pbone->bonecontroller[j]];
-			origin2[j] += adj[pbone->bonecontroller[j]];
-		}
-	}
-
-	if( !VectorCompare( origin1, origin2 ))
-	{
-		VectorLerp( origin1, s, origin2, pos );
-	}
-	else
-	{
-		VectorCopy( origin1, pos );
 	}
 }

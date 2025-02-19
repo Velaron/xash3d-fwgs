@@ -42,6 +42,9 @@ struct sizebuf_s
 	int         iCurBit;
 	int         nDataBits;
 	const char	*pDebugName; // buffer name (pointer to const name)
+
+	// to support GoldSrc broken signed integers
+	int iAlternateSign;
 };
 
 #define MSG_StartReading     MSG_StartWriting
@@ -71,6 +74,7 @@ static inline void MSG_InitExt( sizebuf_t *sb, const char *pDebugName, void *pDa
 		sb->nDataBits = nBits;
 
 	sb->pDebugName = pDebugName;
+	sb->iAlternateSign = 0;
 }
 
 static inline void MSG_StartWriting( sizebuf_t *sb, void *pData, int nBytes, int iStartBit, int nBits )
@@ -169,12 +173,41 @@ static inline qboolean MSG_Overflow( sizebuf_t *sb, int nBits )
 	return sb->bOverflow;
 }
 
-void MSG_InitMasks( void );	// called once at startup engine
+static inline void MSG_EndBitWriting( sizebuf_t *sb )
+{
+	sb->iAlternateSign--;
+
+	if( sb->iAlternateSign < 0 )
+	{
+		Con_Printf( "%s: non-even MSG_Start/EndBitWriting\n", __func__ );
+		sb->iAlternateSign = 0;
+	}
+
+	// we have native bit ops here, just pad to closest byte
+	if(( sb->iCurBit & 7 ) != 0 )
+		MSG_SeekToBit( sb, 8 - ( sb->iCurBit & 7 ), SEEK_CUR );
+}
+
+static inline void MSG_StartBitWriting( sizebuf_t *sb )
+{
+	sb->iAlternateSign++;
+}
+
 void MSG_ExciseBits( sizebuf_t *sb, int startbit, int bitstoremove );
 
 // Bit-write functions
-void MSG_WriteOneBit( sizebuf_t *sb, int nValue );
-void MSG_WriteUBitLong( sizebuf_t *sb, uint curData, int numbits );
+static inline void MSG_WriteOneBit( sizebuf_t *sb, int nValue )
+{
+	if( !MSG_Overflow( sb, 1 ))
+	{
+		if( nValue ) sb->pData[sb->iCurBit>>3] |= BIT( sb->iCurBit & 7 );
+		else sb->pData[sb->iCurBit>>3] &= ~BIT( sb->iCurBit & 7 );
+
+		sb->iCurBit++;
+	}
+}
+
+NO_ASAN void MSG_WriteUBitLong( sizebuf_t *sb, uint curData, int numbits );
 void MSG_WriteSBitLong( sizebuf_t *sb, int data, int numbits );
 void MSG_WriteBitLong( sizebuf_t *sb, uint data, int numbits, qboolean bSigned );
 qboolean MSG_WriteBits( sizebuf_t *sb, const void *pData, int nBits );
@@ -195,7 +228,7 @@ void MSG_WriteFloat( sizebuf_t *sb, float val );
 void MSG_WriteVec3Coord( sizebuf_t *sb, const float *fa );
 void MSG_WriteVec3Angles( sizebuf_t *sb, const float *fa );
 qboolean MSG_WriteString( sizebuf_t *sb, const char *pStr );		// returns false if it overflows the buffer.
-qboolean MSG_WriteStringf( sizebuf_t *sb, const char *format, ... ) _format( 2 );
+qboolean MSG_WriteStringf( sizebuf_t *sb, const char *format, ... ) FORMAT_CHECK( 2 );
 qboolean MSG_WriteBytes( sizebuf_t *sb, const void *pBuf, int nBytes );
 
 // helper functions
@@ -222,8 +255,8 @@ float MSG_ReadCoord( sizebuf_t *sb );
 float MSG_ReadFloat( sizebuf_t *sb );
 void MSG_ReadVec3Coord( sizebuf_t *sb, vec3_t fa );
 void MSG_ReadVec3Angles( sizebuf_t *sb, vec3_t fa );
-char *MSG_ReadString( sizebuf_t *sb );
-char *MSG_ReadStringLine( sizebuf_t *sb );
+char *MSG_ReadString( sizebuf_t *sb ) RETURNS_NONNULL;
+char *MSG_ReadStringLine( sizebuf_t *sb ) RETURNS_NONNULL;
 qboolean MSG_ReadBytes( sizebuf_t *sb, void *pOut, int nBytes );
 
 #endif//NET_BUFFER_H

@@ -15,6 +15,7 @@ GNU General Public License for more details.
 
 #include <math.h>
 #include "imagelib.h"
+#include "eiface.h" // ARRAYSIZE
 
 // global image variables
 imglib_t	image;
@@ -67,7 +68,6 @@ static const cubepack_t load_cubemap[] =
 { "3Ds Sky1", skybox_qv1 },
 { "3Ds Sky2", skybox_qv2 },
 { "3Ds Cube", cubemap_v1 },
-{ NULL, NULL },
 };
 
 // soul of ImageLib - table of image format constants
@@ -110,7 +110,7 @@ void Image_Reset( void )
 	image.size = 0;
 }
 
-static rgbdata_t *ImagePack( void )
+static MALLOC_LIKE( FS_FreeImage, 1 ) rgbdata_t *ImagePack( void )
 {
 	rgbdata_t	*pack;
 
@@ -297,9 +297,8 @@ rgbdata_t *FS_LoadImage( const char *filename, const byte *buffer, size_t size )
 {
 	const char	*ext = COM_FileExtension( filename );
 	string		loadname;
-	int		i;
+	int		i, j;
 	const loadpixformat_t *extfmt;
-	const cubepack_t	*cmap;
 
 	Q_strncpy( loadname, filename, sizeof( loadname ));
 	Image_Reset(); // clear old image
@@ -317,8 +316,10 @@ rgbdata_t *FS_LoadImage( const char *filename, const byte *buffer, size_t size )
 		return ImagePack();
 
 	// check all cubemap sides with package suffix
-	for( cmap = load_cubemap; cmap && cmap->type; cmap++ )
+	for( j = 0; j < ARRAYSIZE( load_cubemap ); j++ )
 	{
+		const cubepack_t	*cmap = &load_cubemap[j];
+
 		for( i = 0; i < 6; i++ )
 		{
 			if( Image_ProbeLoad( extfmt, loadname, cmap->type[i].suf, cmap->type[i].hint ))
@@ -360,7 +361,7 @@ load_internal:
 	}
 
 	if( loadname[0] != '#' )
-		Con_Reportf( S_WARN "FS_LoadImage: couldn't load \"%s\"\n", loadname );
+		Con_Reportf( S_WARN "%s: couldn't load \"%s\"\n", __func__, loadname );
 
 	// clear any force flags
 	image.force_flags = 0;
@@ -547,7 +548,7 @@ static void Test_CheckImage( const char *name, rgbdata_t *rgb )
 	TASSERT( load->size == rgb->size )
 	TASSERT( memcmp(load->buffer, rgb->buffer, rgb->size ) == 0 )
 
-	Mem_Free( load );
+	FS_FreeImage( load );
 }
 
 void Test_RunImagelib( void )

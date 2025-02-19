@@ -43,7 +43,6 @@ static struct joy_axis_s
 	short val;
 	short prevval;
 } joyaxis[MAX_AXES] = { 0 };
-static byte currentbinding; // add posibility to remap keys, to place it in joykeys[]
 static qboolean joy_initialized;
 
 static CVAR_DEFINE_AUTO( joy_pitch,   "100.0", FCVAR_ARCHIVE | FCVAR_FILTERABLE, "joystick pitch sensitivity" );
@@ -60,9 +59,9 @@ static CVAR_DEFINE_AUTO( joy_pitch_deadzone, DEFAULT_JOY_DEADZONE, FCVAR_ARCHIVE
 static CVAR_DEFINE_AUTO( joy_yaw_deadzone, DEFAULT_JOY_DEADZONE, FCVAR_ARCHIVE | FCVAR_FILTERABLE, "yaw axis deadzone. Value from 0 to 32767" );
 static CVAR_DEFINE_AUTO( joy_axis_binding, "sfpyrl", FCVAR_ARCHIVE | FCVAR_FILTERABLE, "axis hardware id to engine inner axis binding, "
 	"s - side, f - forward, y - yaw, p - pitch, r - left trigger, l - right trigger" );
-static CVAR_DEFINE_AUTO( joy_found, "0", FCVAR_READ_ONLY, "is joystick is connected" );
-static CVAR_DEFINE_AUTO( joy_index, "0", FCVAR_READ_ONLY, "current active joystick" );
 CVAR_DEFINE_AUTO( joy_enable, "1", FCVAR_ARCHIVE | FCVAR_FILTERABLE, "enable joystick" );
+static CVAR_DEFINE_AUTO( joy_have_gyro, "0", FCVAR_READ_ONLY, "tells whether current active gamepad has gyroscope or not" );
+static CVAR_DEFINE_AUTO( joy_calibrated, "0", FCVAR_READ_ONLY, "tells whether current active gamepad gyroscope has been calibrated or not" );
 
 /*
 ============
@@ -71,7 +70,30 @@ Joy_IsActive
 */
 qboolean Joy_IsActive( void )
 {
-	return joy_found.value && joy_enable.value;
+	return joy_enable.value;
+}
+
+/*
+===========
+Joy_SetCapabilities
+===========
+*/
+void Joy_SetCapabilities( qboolean have_gyro )
+{
+	Cvar_FullSet( joy_have_gyro.name, have_gyro ? "1" : "0", joy_have_gyro.flags );
+}
+
+/*
+===========
+Joy_SetCalibrationState
+===========
+*/
+void Joy_SetCalibrationState( joy_calibration_state_t state )
+{
+	if( (int)joy_calibrated.value == state )
+		return;
+
+	Cvar_FullSet( joy_calibrated.name, va( "%d", state ), joy_calibrated.flags );
 }
 
 /*
@@ -81,7 +103,7 @@ Joy_HatMotionEvent
 DPad events
 ============
 */
-void Joy_HatMotionEvent( byte hat, byte value )
+static void Joy_HatMotionEvent( int value )
 {
 	struct
 	{
@@ -95,9 +117,6 @@ void Joy_HatMotionEvent( byte hat, byte value )
 		{ JOY_HAT_RIGHT, K_RIGHTARROW },
 	};
 	int i;
-
-	if( !joy_found.value )
-		return;
 
 	for( i = 0; i < ARRAYSIZE( keys ); i++ )
 	{
@@ -134,7 +153,7 @@ static void Joy_ProcessTrigger( const engineAxis_t engineAxis, short value )
 		trigThreshold = joy_lt_threshold.value;
 		break;
 	default:
-		Con_Reportf( S_ERROR  "Joy_ProcessTrigger: invalid axis = %i", engineAxis );
+		Con_Reportf( S_ERROR "%s: invalid axis = %i\n", __func__, engineAxis );
 		break;
 	}
 
@@ -205,7 +224,7 @@ static void Joy_ProcessStick( const engineAxis_t engineAxis, short value )
 	case JOY_AXIS_PITCH: deadzone = joy_pitch_deadzone.value; break;
 	case JOY_AXIS_YAW:   deadzone = joy_yaw_deadzone.value; break;
 	default:
-		Con_Reportf( S_ERROR  "Joy_ProcessStick: invalid axis = %i", engineAxis );
+		Con_Reportf( S_ERROR "%s: invalid axis = %i\n", __func__, engineAxis );
 		break;
 	}
 
@@ -218,14 +237,14 @@ static void Joy_ProcessStick( const engineAxis_t engineAxis, short value )
 
 	// fwd/side axis simulate hat movement
 	if( ( engineAxis == JOY_AXIS_SIDE || engineAxis == JOY_AXIS_FWD ) &&
-		( CL_IsInMenu() || CL_IsInConsole() ) )
+		( cls.key_dest == key_menu || cls.key_dest == key_console ))
 	{
 		int val = 0;
 
 		val |= Joy_GetHatValueForAxis( JOY_AXIS_SIDE );
 		val |= Joy_GetHatValueForAxis( JOY_AXIS_FWD );
 
-		Joy_HatMotionEvent( 0, val );
+		Joy_HatMotionEvent( val );
 	}
 }
 
@@ -236,23 +255,9 @@ Joy_AxisMotionEvent
 Axis events
 =============
 */
-void Joy_AxisMotionEvent( byte axis, short value )
+void Joy_AxisMotionEvent( engineAxis_t engineAxis, short value )
 {
-	if( !joy_found.value )
-		return;
-
-	if( axis >= MAX_AXES )
-	{
-		Con_Reportf( "Only 6 axes is supported\n" );
-		return;
-	}
-
-	Joy_KnownAxisMotionEvent( joyaxesmap[axis], value );
-}
-
-void Joy_KnownAxisMotionEvent( engineAxis_t engineAxis, short value )
-{
-	if( engineAxis == JOY_AXIS_NULL )
+	if( engineAxis >= JOY_AXIS_NULL )
 		return;
 
 	if( value == joyaxis[engineAxis].val )
@@ -266,66 +271,14 @@ void Joy_KnownAxisMotionEvent( engineAxis_t engineAxis, short value )
 
 /*
 =============
-Joy_BallMotionEvent
+Joy_GyroEvent
 
-Trackball events. UNDONE
+Gyroscope events
 =============
 */
-void Joy_BallMotionEvent( byte ball, short xrel, short yrel )
+void Joy_GyroEvent( vec3_t data )
 {
-	//if( !joy_found.value )
-	//	return;
-}
 
-/*
-=============
-Joy_ButtonEvent
-
-Button events
-=============
-*/
-void Joy_ButtonEvent( byte button, byte down )
-{
-	if( !joy_found.value )
-		return;
-
-	// generic game button code.
-	if( button > 32 )
-	{
-		int origbutton = button;
-		button = ( button & 31 ) + K_AUX1;
-
-		Con_Reportf( "Only 32 joybuttons is supported, converting %i button ID to %s\n", origbutton, Key_KeynumToString( button ) );
-	}
-	else button += K_AUX1;
-
-	Key_Event( button, down );
-}
-
-/*
-=============
-Joy_RemoveEvent
-
-Called when joystick is removed. For future expansion
-=============
-*/
-void Joy_RemoveEvent( void )
-{
-	if( joy_found.value )
-		Cvar_FullSet( "joy_found", "0", FCVAR_READ_ONLY );
-}
-
-/*
-=============
-Joy_RemoveEvent
-
-Called when joystick is removed. For future expansion
-=============
-*/
-void Joy_AddEvent( void )
-{
-	if( joy_enable.value && !joy_found.value )
-		Cvar_FullSet( "joy_found", "1", FCVAR_READ_ONLY );
 }
 
 /*
@@ -364,14 +317,19 @@ void Joy_FinalizeMove( float *fw, float *side, float *dpitch, float *dyaw )
 
 	*fw     -= joy_forward.value * (float)joyaxis[JOY_AXIS_FWD ].val/(float)SHRT_MAX;  // must be form -1.0 to 1.0
 	*side   += joy_side.value    * (float)joyaxis[JOY_AXIS_SIDE].val/(float)SHRT_MAX;
-#if !defined(XASH_SDL)
-	*dpitch += joy_pitch.value * (float)joyaxis[JOY_AXIS_PITCH].val/(float)SHRT_MAX * host.realframetime;  // abs axis rotate is frametime related
-	*dyaw   -= joy_yaw.value   * (float)joyaxis[JOY_AXIS_YAW  ].val/(float)SHRT_MAX * host.realframetime;
-#else
-	// HACKHACK: SDL have inverted look axis.
 	*dpitch -= joy_pitch.value * (float)joyaxis[JOY_AXIS_PITCH].val/(float)SHRT_MAX * host.realframetime;
 	*dyaw   += joy_yaw.value   * (float)joyaxis[JOY_AXIS_YAW  ].val/(float)SHRT_MAX * host.realframetime;
-#endif
+}
+
+static void Joy_CalibrateGyro_f( void )
+{
+	if( !joy_have_gyro.value )
+	{
+		Con_Printf( "Current active gamepad doesn't have gyroscope\n" );
+		return;
+	}
+
+	Platform_CalibrateGamepadGyro();
 }
 
 /*
@@ -383,6 +341,8 @@ Main init procedure
 */
 void Joy_Init( void )
 {
+	Cmd_AddRestrictedCommand( "joy_calibrate_gyro", Joy_CalibrateGyro_f, "calibrate gamepad gyroscope. You must to put gamepad on stationary surface" );
+
 	Cvar_RegisterVariable( &joy_pitch );
 	Cvar_RegisterVariable( &joy_yaw );
 	Cvar_RegisterVariable( &joy_side );
@@ -402,11 +362,9 @@ void Joy_Init( void )
 	Cvar_RegisterVariable( &joy_yaw_deadzone );
 
 	Cvar_RegisterVariable( &joy_axis_binding );
-	Cvar_RegisterVariable( &joy_found );
-	// we doesn't loaded config.cfg yet, so this cvar is not archive.
-	// change by +set joy_index in cmdline
-	Cvar_RegisterVariable( &joy_index );
 
+	Cvar_RegisterVariable( &joy_have_gyro );
+	Cvar_RegisterVariable( &joy_calibrated );
 	Cvar_RegisterVariable( &joy_enable );
 
 	// renamed from -nojoy to -noenginejoy to not conflict with
@@ -417,7 +375,7 @@ void Joy_Init( void )
 		return;
 	}
 
-	Cvar_FullSet( "joy_found", va( "%d", Platform_JoyInit( joy_index.value )), FCVAR_READ_ONLY );
+	Platform_JoyInit();
 
 	joy_initialized = true;
 }
@@ -431,8 +389,5 @@ Shutdown joystick code
 */
 void Joy_Shutdown( void )
 {
-	if( joy_initialized )
-	{
-		Cvar_FullSet( "joy_found", 0, FCVAR_READ_ONLY );
-	}
+	Platform_JoyShutdown();
 }

@@ -70,7 +70,7 @@ as shown below::
 
 
 from waflib.Build import BuildContext
-from waflib import Utils, Logs, Context, Errors
+from waflib import Utils, Logs, Context, Errors, TaskGen
 
 
 def get_deps(bld, target):
@@ -204,7 +204,7 @@ def export(bld):
 			continue
 		if getattr(tgen, 'cmake_skip', False):
 			continue
-		if set(('c', 'cxx')) & set(getattr(tgen, 'features', [])):
+		if set(('c', 'cxx', 'subst')) & set(getattr(tgen, 'features', [])):
 			loc = tgen.path.relpath().replace('\\', '/')
 			if loc not in cmakes:
 				cmake = CMake(bld, loc)
@@ -215,6 +215,11 @@ def export(bld):
 	for cmake in cmakes.values():
 		cmake.export()
 
+@TaskGen.feature('subst')
+@TaskGen.before_method('process_subst')
+def backup_sources(self):
+	# process_subst removes source list to avoid further processing but we need it
+	self.srces = self.to_nodes(self.source)
 
 def cleanup(bld):
 	'''Removes all generated makefiles from the *waf* build environment.
@@ -234,7 +239,7 @@ def cleanup(bld):
 			continue
 		if getattr(tgen, 'cmake_skip', False):
 			continue
-		if set(('c', 'cxx')) & set(getattr(tgen, 'features', [])):
+		if set(('c', 'cxx', 'subst')) & set(getattr(tgen, 'features', [])):
 			loc = tgen.path.relpath().replace('\\', '/')
 			CMake(bld, loc).cleanup()
 
@@ -293,9 +298,8 @@ class CMake(object):
 
 		content = ''
 		if is_top:
-			content += 'cmake_minimum_required(VERSION 2.8.12)\n'
-			content += 'project(%s)\n' % (getattr(Context.g_module,
-												  Context.APPNAME))
+			content += 'cmake_minimum_required(VERSION 3.5)\n'
+			content += 'project(%s)\n' % (getattr(Context.g_module, Context.APPNAME))
 			content += '\n'
 
 			env = self.bld.env
@@ -307,10 +311,13 @@ class CMake(object):
 
 			flags = env.CFLAGS
 			if len(flags):
+				# remove -MMD flag from gccdeps.py as it's already inserted by CMake
+				flags = [f for f in flags if not f == '-MMD']
 				content += 'set(CMAKE_C_FLAGS "%s")\n' % (' '.join(flags))
 
 			flags = env.CXXFLAGS
 			if len(flags):
+				flags = [f for f in flags if not f == '-MMD']
 				content += 'set(CMAKE_CXX_FLAGS "%s")\n' % (' '.join(flags))
 
 		if len(self.tgens):
@@ -321,14 +328,33 @@ class CMake(object):
 		if len(self.cmakes):
 			content += '\n'
 			for cmake in self.cmakes:
-				content += 'add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/%s)\n' % (
-					cmake.get_location())
+				content += 'add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/%s)\n' % (cmake.get_location())
 
 		return content
 
 	def get_tgen_content(self, tgen):
 		content = ''
 		name = tgen.get_name()
+
+		# this only covers simple subst case when we have
+		# direct source and target files
+		if 'subst' in tgen.features:
+			if getattr(tgen, 'subst_fun', None):
+				return
+			encoding = getattr(tgen, 'encoding', 'latin-1')
+			re_m4 = getattr(tgen, 're_m4', TaskGen.re_m4)
+
+			targets = Utils.to_list(tgen.target)
+			for x, y in zip(tgen.srces, targets):
+				code = x.read(encoding=encoding)
+				matches = re_m4.findall(code)
+				for var in matches:
+					p = getattr(tgen, var, None)
+					if p is not None:
+						content += 'set(%s \"%s\")\n' % (var, p)
+				content += 'configure_file(%s %s @ONLY)\n\n' % (x.path_from(tgen.path).replace('\\', '/'), y)
+
+			return content
 
 		content += 'set(%s_SRC' % (name.upper())
 		for src in tgen.source:
@@ -340,7 +366,7 @@ class CMake(object):
 		if len(includes):
 			content += 'set(%s_INCLUDES' % (name.upper())
 			for include in includes:
-				content += '\n	%s' % include
+				content += '\n	${CMAKE_CURRENT_BINARY_DIR}/%s %s' % (include, include)
 			content += '\n)\n\n'
 			content += 'include_directories(${%s_INCLUDES})\n' % (name.upper())
 
@@ -353,11 +379,9 @@ class CMake(object):
 
 		if set(('cprogram', 'cxxprogram')) & set(tgen.features):
 			if tgen.env.DEST_OS == 'win32':
-				content += 'add_executable(%s WIN32 ${%s_SRC})\n' % (
-					name, name.upper())
+				content += 'add_executable(%s WIN32 ${%s_SRC})\n' % (name, name.upper())
 			else:
-				content += 'add_executable(%s ${%s_SRC})\n' % (name,
-															   name.upper())
+				content += 'add_executable(%s ${%s_SRC})\n' % (name, name.upper())
 
 		elif set(('cshlib', 'cxxshlib')) & set(tgen.features):
 			content += 'add_library(%s SHARED ${%s_SRC})\n\n' % (

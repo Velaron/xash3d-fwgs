@@ -138,10 +138,7 @@ intptr_t CL_RenderGetParm( const int parm, const int arg, const qboolean checkRe
 	switch( parm )
 	{
 	case PARM_BSP2_SUPPORTED:
-#ifdef SUPPORT_BSP2_FORMAT
 		return 1;
-#endif
-		return 0;
 	case PARAM_GAMEPAUSED:
 		return cl.paused;
 	case PARM_CLIENT_INGAME:
@@ -170,6 +167,12 @@ intptr_t CL_RenderGetParm( const int parm, const int arg, const qboolean checkRe
 		return refState.width;
 	case PARM_SCREEN_HEIGHT:
 		return refState.height;
+	case PARM_SKY_SPHERE:
+		return FBitSet( world.flags, FWORLD_SKYSPHERE ) && !FBitSet( world.flags, FWORLD_CUSTOM_SKYBOX );
+	case PARM_SURF_SAMPLESIZE:
+		if( arg >= 0 && arg < cl.worldmodel->numsurfaces )
+			return Mod_SampleSizeForFace( &cl.worldmodel->surfaces[arg] );
+		return LM_SAMPLE_SIZE;
 	default:
 		// indicates call from client.dll
 		if( checkRef )
@@ -209,6 +212,17 @@ intptr_t CL_RenderGetParm( const int parm, const int arg, const qboolean checkRe
 			return (intptr_t)&clgame.palette;
 		case PARM_GET_VIEWENT_PTR:
 			return (intptr_t)&clgame.viewent;
+		case PARM_GET_TEXGAMMATABLE_PTR:
+		case PARM_GET_LIGHTGAMMATABLE_PTR:
+		case PARM_GET_SCREENGAMMATABLE_PTR:
+		case PARM_GET_LINEARGAMMATABLE_PTR:
+			return V_GetGammaPtr( parm );
+		case PARM_GET_LIGHTSTYLES_PTR:
+			return (intptr_t)CL_GetLightStyle( 0 );
+		case PARM_GET_DLIGHTS_PTR:
+			return (intptr_t)CL_GetDynamicLight( 0 );
+		case PARM_GET_ELIGHTS_PTR:
+			return (intptr_t)CL_GetEntityLight( 0 );
 		}
 	}
 	return 0;
@@ -217,6 +231,11 @@ intptr_t CL_RenderGetParm( const int parm, const int arg, const qboolean checkRe
 static intptr_t pfnRenderGetParm( int parm, int arg )
 {
 	return CL_RenderGetParm( parm, arg, true );
+}
+
+static void pfnAVI_StreamSound( void *avi, int entnum, float fvol, float attn, float synctime )
+{
+	return; // stub, use AVI_SetParm and AVI_Think to stream AVI sound
 }
 
 static render_api_t gRenderAPI =
@@ -251,7 +270,7 @@ static render_api_t gRenderAPI =
 	NULL, // R_UploadStretchRaw,
 	(void*)AVI_FreeVideo,
 	(void*)AVI_IsActive,
-	S_StreamAviSamples,
+	(void*)pfnAVI_StreamSound,
 	NULL,
 	NULL,
 	NULL, // GL_Bind,
@@ -279,7 +298,7 @@ static render_api_t gRenderAPI =
 	R_Mem_Free,
 	pfnGetFilesList,
 	pfnFileBufferCRC32,
-	COM_CompareFileTime,
+	pfnCompareFileTime,
 	Host_Error,
 	(void*)CL_ModelHandle,
 	pfnTime,
@@ -341,7 +360,7 @@ qboolean R_InitRenderAPI( void )
 	{
 		if( clgame.dllFuncs.pfnGetRenderInterface( CL_RENDER_INTERFACE_VERSION, &gRenderAPI, &clgame.drawFuncs ))
 		{
-			Con_Reportf( "CL_LoadProgs: ^2initailized extended RenderAPI ^7ver. %i\n", CL_RENDER_INTERFACE_VERSION );
+			Con_Reportf( "%s: ^2initailized extended RenderAPI ^7ver. %i\n", __func__, CL_RENDER_INTERFACE_VERSION );
 			return true;
 		}
 

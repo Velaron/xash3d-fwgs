@@ -24,6 +24,7 @@ static struct
 { PLATFORM_IRIX,          "irix" },
 { PLATFORM_NSWITCH,       "nswitch" },
 { PLATFORM_PSVITA,        "psvita" },
+{ PLATFORM_WASI,          "wasi" },
 };
 
 static struct
@@ -39,6 +40,10 @@ static struct
 { ARCHITECTURE_X86, 0, -1, -1, "i386" },
 { ARCHITECTURE_E2K, 0, -1, -1, "e2k" },
 { ARCHITECTURE_JS, 0, -1, -1, "javascript" },
+
+// all possible WebAssembly names
+{ ARCHITECTURE_WASM, 0, -1, true, "wasm64" },
+{ ARCHITECTURE_WASM, 0, -1, false, "wasm32" },
 
 // all possible MIPS names
 { ARCHITECTURE_MIPS, 0, ENDIANNESS_BIG,    true,  "mips64" },
@@ -175,8 +180,14 @@ int main( void )
 	if( Q_buildnum_date( "Apr 02 2015" ) != 1 )
 		return 201;
 
-	if( Q_buildnum_date( "Apr 17 2023" ) != 2938 )
+	if( Q_buildnum_date( "Apr 02 2015" ) != Q_buildnum_iso( "2015-04-02 21:19:10 +0300" ))
 		return 202;
+
+	if( Q_buildnum_date( "Apr 17 2023" ) != 2938 )
+		return 203;
+
+	if( Q_buildnum_date( "Apr 17 2023" ) != Q_buildnum_iso( "2023-04-17 21:19:10 +0300" ))
+		return 204;
 
 	return EXIT_SUCCESS;
 }

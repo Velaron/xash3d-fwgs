@@ -47,10 +47,13 @@ qboolean SW_CreateBuffer( int width, int height, uint *stride, uint *bpp, uint *
 	if( sw.renderer )
 	{
 		unsigned int format = SDL_GetWindowPixelFormat( host.hWnd );
-		SDL_RenderSetLogicalSize(sw.renderer, refState.width, refState.height);
+		SDL_RenderSetLogicalSize( sw.renderer, refState.width, refState.height );
 
 		if( sw.tex )
+		{
 			SDL_DestroyTexture( sw.tex );
+			sw.tex = NULL;
+		}
 
 		// guess
 		if( format == SDL_PIXELFORMAT_UNKNOWN )
@@ -63,20 +66,16 @@ qboolean SW_CreateBuffer( int width, int height, uint *stride, uint *bpp, uint *
 
 		// we can only copy fast 16 or 32 bits
 		// SDL_Renderer does not allow zero-copy, so 24 bits will be ineffective
-		if( !( SDL_BYTESPERPIXEL(format) == 2 || SDL_BYTESPERPIXEL(format) == 4 ) )
+		if( SDL_BYTESPERPIXEL( format ) != 2 && SDL_BYTESPERPIXEL( format ) != 4 )
 			format = SDL_PIXELFORMAT_RGBA8888;
 
-		sw.tex = SDL_CreateTexture(sw.renderer, format,
-										SDL_TEXTUREACCESS_STREAMING,
-										width, height);
+		sw.tex = SDL_CreateTexture( sw.renderer, format, SDL_TEXTUREACCESS_STREAMING, width, height );
 
 		// fallback
 		if( !sw.tex && format != SDL_PIXELFORMAT_RGBA8888 )
 		{
 			format = SDL_PIXELFORMAT_RGBA8888;
-			sw.tex = SDL_CreateTexture(sw.renderer, format,
-											SDL_TEXTUREACCESS_STREAMING,
-											width, height);
+			sw.tex = SDL_CreateTexture( sw.renderer, format, SDL_TEXTUREACCESS_STREAMING, width, height );
 		}
 
 		if( !sw.tex )
@@ -89,25 +88,26 @@ qboolean SW_CreateBuffer( int width, int height, uint *stride, uint *bpp, uint *
 			void *pixels;
 			int pitch;
 
-			if( !SDL_LockTexture(sw.tex, NULL, &pixels, &pitch ) )
+			if( !SDL_LockTexture( sw.tex, NULL, &pixels, &pitch ))
 			{
 				int bits;
 				uint amask;
+
 				// lock successfull, release
-				SDL_UnlockTexture(sw.tex);
+				SDL_UnlockTexture( sw.tex );
 
 				// enough for building blitter tables
 				SDL_PixelFormatEnumToMasks( format, &bits, r, g, b, &amask );
-				*bpp = SDL_BYTESPERPIXEL(format);
+				*bpp = SDL_BYTESPERPIXEL( format );
 				*stride = pitch / *bpp;
 
 				return true;
 			}
 
 			// fallback to surf
-			SDL_DestroyTexture(sw.tex);
+			SDL_DestroyTexture( sw.tex );
 			sw.tex = NULL;
-			SDL_DestroyRenderer(sw.renderer);
+			SDL_DestroyRenderer( sw.renderer );
 			sw.renderer = NULL;
 		}
 	}
@@ -126,7 +126,7 @@ qboolean SW_CreateBuffer( int width, int height, uint *stride, uint *bpp, uint *
 		// if it is failed, it is not possible to draw with SDL in REF_SOFTWARE mode
 		if( !sw.win )
 		{
-			Sys_Warn("failed to initialize software output, try enable sw_glblit");
+			Sys_Warn( "failed to initialize software output, try running with -glblit flag" );
 			return false;
 		}
 
@@ -141,9 +141,10 @@ qboolean SW_CreateBuffer( int width, int height, uint *stride, uint *bpp, uint *
 		{
 			sw.surf = SDL_CreateRGBSurfaceWithFormat( 0, width, height, 16, SDL_PIXELFORMAT_RGB565 );
 			if( !sw.surf )
-				Sys_Error(SDL_GetError());
+				Sys_Error( "%s: %s", __func__, SDL_GetError( ));
 		}
 #endif
+		return true;
 	}
 
 	// we can't create ref_soft buffer
@@ -256,7 +257,8 @@ static void R_InitVideoModes( void )
 {
 	char buf[MAX_VA_STRING];
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
-	int displayIndex = 0; // TODO: handle multiple displays somehow
+	SDL_Point point = { window_xpos.value, window_ypos.value };
+	int displayIndex = SDL_GetPointDisplayIndex( &point );
 	int i, modes;
 
 	num_vidmodes = 0;
@@ -377,21 +379,21 @@ static void WIN_SetDPIAwareness( void )
 
 			if( hResult == S_OK )
 			{
-				Con_Reportf( "SetDPIAwareness: Success\n" );
+				Con_Reportf( "%s: Success\n", __func__ );
 				bSuccess = TRUE;
 			}
-			else if( hResult == E_INVALIDARG ) Con_Reportf( "SetDPIAwareness: Invalid argument\n" );
-			else if( hResult == E_ACCESSDENIED ) Con_Reportf( "SetDPIAwareness: Access Denied\n" );
+			else if( hResult == E_INVALIDARG ) Con_Reportf( "%s: Invalid argument\n", __func__ );
+			else if( hResult == E_ACCESSDENIED ) Con_Reportf( "%s: Access Denied\n", __func__ );
 		}
-		else Con_Reportf( "SetDPIAwareness: Can't get SetProcessDpiAwareness\n" );
+		else Con_Reportf( "%s: Can't get SetProcessDpiAwareness\n", __func__ );
 		FreeLibrary( hModule );
 	}
-	else Con_Reportf( "SetDPIAwareness: Can't load shcore.dll\n" );
+	else Con_Reportf( "%s: Can't load shcore.dll\n", __func__ );
 
 
 	if( !bSuccess )
 	{
-		Con_Reportf( "SetDPIAwareness: Trying SetProcessDPIAware...\n" );
+		Con_Reportf( "%s: Trying SetProcessDPIAware...\n", __func__ );
 
 		if( ( hModule = LoadLibrary( "user32.dll" ) ) )
 		{
@@ -402,15 +404,15 @@ static void WIN_SetDPIAwareness( void )
 
 				if( hResult )
 				{
-					Con_Reportf( "SetDPIAwareness: Success\n" );
+					Con_Reportf( "%s: Success\n", __func__ );
 					bSuccess = TRUE;
 				}
-				else Con_Reportf( "SetDPIAwareness: fail\n" );
+				else Con_Reportf( "%s: fail\n", __func__ );
 			}
-			else Con_Reportf( "SetDPIAwareness: Can't get SetProcessDPIAware\n" );
+			else Con_Reportf( "%s: Can't get SetProcessDPIAware\n", __func__ );
 			FreeLibrary( hModule );
 		}
-		else Con_Reportf( "SetDPIAwareness: Can't load user32.dll\n" );
+		else Con_Reportf( "%s: Can't load user32.dll\n", __func__ );
 	}
 }
 
@@ -472,7 +474,7 @@ void *GL_GetProcAddress( const char *name )
 
 	if( !func )
 	{
-		Con_Reportf( S_ERROR "GL_GetProcAddress failed for %s\n", name );
+		Con_Reportf( S_ERROR "%s failed for %s\n", __func__, name );
 	}
 
 	return func;
@@ -531,7 +533,7 @@ static qboolean GL_CreateContext( void )
 #if SDL_VERSION_ATLEAST(2, 0, 0)
 	if( ( glw_state.context = SDL_GL_CreateContext( host.hWnd ) ) == NULL)
 	{
-		Con_Reportf( S_ERROR "GL_CreateContext: %s\n", SDL_GetError());
+		Con_Reportf( S_ERROR "%s: %s\n", __func__, SDL_GetError( ));
 		return GL_DeleteContext();
 	}
 #endif // SDL_VERSION_ATLEAST( 2, 0, 0 )
@@ -548,7 +550,7 @@ static qboolean GL_UpdateContext( void )
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
 	if( SDL_GL_MakeCurrent( host.hWnd, glw_state.context ) < 0 )
 	{
-		Con_Reportf( S_ERROR "GL_UpdateContext: %s\n", SDL_GetError());
+		Con_Reportf( S_ERROR "%s: %s\n", __func__, SDL_GetError( ));
 		return GL_DeleteContext();
 	}
 #endif // SDL_VERSION_ATLEAST( 2, 0, 0 )
@@ -633,13 +635,24 @@ static qboolean VID_SetScreenResolution( int width, int height, window_mode_t wi
 
 void VID_RestoreScreenResolution( void )
 {
-#if SDL_VERSION_ATLEAST( 2, 0, 0 )
+	// on mobile platform fullscreen is designed to be always on
+	// and code below minimizes our window if we're in full screen
+	// don't do that on mobile devices
+#if SDL_VERSION_ATLEAST( 2, 0, 0 ) && !XASH_MOBILE_PLATFORM
 	switch((window_mode_t)vid_fullscreen.value )
 	{
 	case WINDOW_MODE_WINDOWED:
+		// TODO: this line is from very old SDL video backend
+		// figure out why we need it, because in windowed mode we
+		// always have borders
 		SDL_SetWindowBordered( host.hWnd, SDL_TRUE );
 		break;
-	default:
+	case WINDOW_MODE_BORDERLESS:
+		// in borderless fullscreen we don't change screen resolution, so no-op
+		break;
+	case WINDOW_MODE_FULLSCREEN:
+		// TODO: we might want to not minimize window if current desktop mode
+		// and window mode are the same
 		SDL_MinimizeWindow( host.hWnd );
 		SDL_SetWindowFullscreen( host.hWnd, 0 );
 		break;
@@ -654,6 +667,7 @@ static void VID_SetWindowIcon( SDL_Window *hWnd )
 	char iconpath[MAX_STRING];
 #if XASH_WIN32 // ICO support only for Win32
 	const char *localIcoPath;
+	HINSTANCE hInst = GetModuleHandle( NULL );
 
 	if(( localIcoPath = FS_GetDiskPath( GI->iconpath, true )))
 	{
@@ -661,7 +675,7 @@ static void VID_SetWindowIcon( SDL_Window *hWnd )
 		if( ico && WIN_SetWindowIcon( ico ))
 			return;
 	}
-#endif // _WIN32 && !XASH_64BIT
+#endif // XASH_WIN32
 
 	Q_strncpy( iconpath, GI->iconpath, sizeof( iconpath ));
 	COM_ReplaceExtension( iconpath, ".tga", sizeof( iconpath ));
@@ -685,7 +699,7 @@ static void VID_SetWindowIcon( SDL_Window *hWnd )
 	}
 
 #if XASH_WIN32 // ICO support only for Win32
-	WIN_SetWindowIcon( LoadIcon( host.hInst, MAKEINTRESOURCE( 101 )));
+	WIN_SetWindowIcon( LoadIcon( hInst, MAKEINTRESOURCE( 101 )));
 #endif
 }
 #endif // SDL_VERSION_ATLEAST( 2, 0, 0 )
@@ -703,7 +717,7 @@ static qboolean VID_CreateWindowWithSafeGL( const char *wndname, int xpos, int y
 		if( host.hWnd )
 			break;
 
-		Con_Reportf( S_ERROR "VID_CreateWindow: couldn't create '%s' with safegl level %d: %s\n", wndname, glw_state.safe, SDL_GetError());
+		Con_Reportf( S_ERROR "%s: couldn't create '%s' with safegl level %d: %s\n", __func__, wndname, glw_state.safe, SDL_GetError());
 
 		glw_state.safe++;
 
@@ -722,6 +736,24 @@ static qboolean VID_CreateWindowWithSafeGL( const char *wndname, int xpos, int y
 	return true;
 }
 
+static qboolean RectFitsInDisplay( const SDL_Rect *rect, const SDL_Rect *display )
+{
+	return rect->x >= display->x
+		&& rect->y >= display->y
+		&& rect->x + rect->w <= display->x + display->w
+		&& rect->y + rect->h <= display->y + display->h;
+}	
+// Function to check if the rectangle fits in any display
+static qboolean RectFitsInAnyDisplay( const SDL_Rect *rect, const SDL_Rect *display_rects, int num_displays )
+{
+	for( int i = 0; i < num_displays; i++ )
+	{
+		if( RectFitsInDisplay( rect, &display_rects[i] ))
+			return true; // Rectangle fits in this display
+	}
+	return false; // Rectangle does not fit in any display
+}
+
 /*
 =================
 VID_CreateWindow
@@ -734,6 +766,8 @@ qboolean VID_CreateWindow( int width, int height, window_mode_t window_mode )
 	qboolean maximized = vid_maximized.value != 0.0f;
 	Uint32 wndFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_MOUSE_FOCUS;
 	int xpos, ypos;
+	int num_displays = SDL_GetNumVideoDisplays();
+	SDL_Rect rect = { window_xpos.value, window_ypos.value, width, height };
 
 	Q_strncpy( wndname, GI->title, sizeof( wndname ));
 
@@ -744,35 +778,43 @@ qboolean VID_CreateWindow( int width, int height, window_mode_t window_mode )
 
 	if( window_mode == WINDOW_MODE_WINDOWED )
 	{
-		SDL_Rect r;
-
+		SDL_Rect *display_rects = ( SDL_Rect * )malloc( num_displays * sizeof( SDL_Rect ));
+	
 		SetBits( wndFlags, SDL_WINDOW_RESIZABLE );
 		if( maximized )
 			SetBits( wndFlags, SDL_WINDOW_MAXIMIZED );
 
-#if SDL_VERSION_ATLEAST( 2, 0, 5 )
-		if( SDL_GetDisplayUsableBounds( 0, &r ) < 0 &&
-			SDL_GetDisplayBounds( 0, &r ) < 0 )
-#else
-		if( SDL_GetDisplayBounds( 0, &r ) < 0 )
-#endif
+		if( !display_rects )
 		{
-			Con_Reportf( S_ERROR "VID_CreateWindow: SDL_GetDisplayBounds failed: %s\n", SDL_GetError( ));
-			xpos = SDL_WINDOWPOS_CENTERED;
-			ypos = SDL_WINDOWPOS_CENTERED;
+			Con_Printf( S_ERROR "Failed to allocate memory for display rects!\n" );
+			xpos = SDL_WINDOWPOS_UNDEFINED;
+			ypos = SDL_WINDOWPOS_UNDEFINED;
 		}
 		else
 		{
-			xpos = window_xpos.value;
-			ypos = window_ypos.value;
-
-			// don't create window outside of usable display space
-			if( xpos < r.x || xpos + width > r.x + r.w )
+			for( int i = 0; i < num_displays; i++ )
+			{
+				if( SDL_GetDisplayBounds( i, &display_rects[i] ) != 0 )
+				{
+					Con_Printf( S_ERROR "Failed to get bounds for display %d! SDL_Error: %s\n", i, SDL_GetError());
+					display_rects[i] = ( SDL_Rect ){ 0, 0, 0, 0 };
+				}
+			}
+			// Check if the rectangle fits in any display
+			if( !RectFitsInAnyDisplay( &rect, display_rects, num_displays ))
+			{
+				// Rectangle doesn't fit in any display, center it
 				xpos = SDL_WINDOWPOS_CENTERED;
-
-			if( ypos < r.y || ypos + height > r.y + r.h )
 				ypos = SDL_WINDOWPOS_CENTERED;
+				Con_Printf( S_ERROR "Rectangle does not fit in any display. Centering window.\n" );
+			}
+			else
+			{
+				xpos = rect.x;
+				ypos = rect.y;
+			}
 		}
+		free( display_rects );
 	}
 	else
 	{
@@ -782,7 +824,16 @@ qboolean VID_CreateWindow( int width, int height, window_mode_t window_mode )
 		else
 			SetBits( wndFlags, SDL_WINDOW_FULLSCREEN_DESKTOP );
 		SetBits( wndFlags, SDL_WINDOW_BORDERLESS );
-		xpos = ypos = 0;
+		if ( window_xpos.value < 0 || window_ypos.value < 0 )
+		{
+			xpos = SDL_WINDOWPOS_UNDEFINED;
+			ypos = SDL_WINDOWPOS_UNDEFINED;
+		}
+		else
+		{
+			xpos = window_xpos.value;
+			ypos = window_ypos.value;
+		}
 	}
 
 	if( !VID_CreateWindowWithSafeGL( wndname, xpos, ypos, width, height, wndFlags ))
@@ -842,6 +893,8 @@ qboolean VID_CreateWindow( int width, int height, window_mode_t window_mode )
 
 #else // SDL_VERSION_ATLEAST( 2, 0, 0 )
 	Uint32 flags = 0;
+
+	Q_strncpy( wndname, GI->title, sizeof( wndname ));
 
 	if( window_mode != WINDOW_MODE_WINDOWED )
 		SetBits( flags, SDL_FULLSCREEN|SDL_HWSURFACE );
@@ -1000,9 +1053,11 @@ qboolean R_Init_Video( const int type )
 {
 	string safe;
 	qboolean retval;
+
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
 	SDL_DisplayMode displayMode;
-	SDL_GetCurrentDisplayMode(0, &displayMode);
+	SDL_Point point = { window_xpos.value, window_ypos.value };
+	SDL_GetCurrentDisplayMode( SDL_GetPointDisplayIndex( &point ), &displayMode );
 	refState.desktopBitsPixel = SDL_BITSPERPIXEL( displayMode.format );
 #else
 	refState.desktopBitsPixel = 16;
@@ -1080,7 +1135,7 @@ rserr_t R_ChangeDisplaySettings( int width, int height, window_mode_t window_mod
 
 	if( SDL_GetCurrentDisplayMode( 0, &displayMode ) < 0 )
 	{
-		Con_Printf( S_ERROR "SDL_GetCurrentDisplayMode: %s", SDL_GetError( ));
+		Con_Printf( S_ERROR "SDL_GetCurrentDisplayMode: %s\n", SDL_GetError( ));
 		return rserr_invalid_mode;
 	}
 
@@ -1094,7 +1149,7 @@ rserr_t R_ChangeDisplaySettings( int width, int height, window_mode_t window_mod
 #endif
 
 	refState.fullScreen = window_mode != WINDOW_MODE_WINDOWED;
-	Con_Reportf( "R_ChangeDisplaySettings: Setting video mode to %dx%d %s\n", width, height, refState.fullScreen ? "fullscreen" : "windowed" );
+	Con_Reportf( "%s: Setting video mode to %dx%d %s\n", __func__, width, height, refState.fullScreen ? "fullscreen" : "windowed" );
 
 	if( !host.hWnd )
 	{
@@ -1170,18 +1225,12 @@ qboolean VID_SetMode( void )
 	if( Q_strcmp( vid_fullscreen.string, DEFAULT_FULLSCREEN ))
 	{
 		Cvar_DirectSet( &vid_fullscreen, DEFAULT_FULLSCREEN );
-		Con_Reportf( S_ERROR  "VID_SetMode: windowed unavailable on this platform\n" );
+		Con_Reportf( S_ERROR "%s: windowed unavailable on this platform\n", __func__ );
 	}
 #endif
 
-	if( !FBitSet( vid_fullscreen.flags, FCVAR_CHANGED ))
-		Cvar_DirectSet( &vid_fullscreen, DEFAULT_FULLSCREEN );
-	else
-		ClearBits( vid_fullscreen.flags, FCVAR_CHANGED );
-
-	SetBits( gl_vsync.flags, FCVAR_CHANGED );
-
 	window_mode = bound( 0, vid_fullscreen.value, WINDOW_MODE_COUNT - 1 );
+	SetBits( gl_vsync.flags, FCVAR_CHANGED );
 
 	if(( err = R_ChangeDisplaySettings( iScreenWidth, iScreenHeight, window_mode )) == rserr_ok )
 	{
@@ -1193,22 +1242,22 @@ qboolean VID_SetMode( void )
 		if( err == rserr_invalid_fullscreen )
 		{
 			Cvar_DirectSet( &vid_fullscreen, "0" );
-			Con_Reportf( S_ERROR  "VID_SetMode: fullscreen unavailable in this mode\n" );
-			Sys_Warn("fullscreen unavailable in this mode!");
+			Con_Reportf( S_ERROR "%s: fullscreen unavailable in this mode\n", __func__ );
+			Sys_Warn( "fullscreen unavailable in this mode!" );
 			if(( err = R_ChangeDisplaySettings( iScreenWidth, iScreenHeight, WINDOW_MODE_WINDOWED )) == rserr_ok )
 				return true;
 		}
 		else if( err == rserr_invalid_mode )
 		{
-			Con_Reportf( S_ERROR  "VID_SetMode: invalid mode\n" );
+			Con_Reportf( S_ERROR "%s: invalid mode\n", __func__ );
 			Sys_Warn( "invalid mode, engine will run in %dx%d", sdlState.prev_width, sdlState.prev_height );
 		}
 
 		// try setting it back to something safe
 		if(( err = R_ChangeDisplaySettings( sdlState.prev_width, sdlState.prev_height, WINDOW_MODE_WINDOWED )) != rserr_ok )
 		{
-			Con_Reportf( S_ERROR "VID_SetMode: could not revert to safe mode\n" );
-			Sys_Warn("could not revert to safe mode!");
+			Con_Reportf( S_ERROR "%s: could not revert to safe mode\n", __func__ );
+			Sys_Warn( "could not revert to safe mode!" );
 			return false;
 		}
 	}
@@ -1230,10 +1279,6 @@ void R_Free_Video( void )
 	R_FreeVideoModes();
 
 	ref.dllFuncs.GL_ClearExtensions();
-
-#if SDL_VERSION_ATLEAST( 2, 0, 0 )
-	SDL_VideoQuit();
-#endif
 }
 
 #endif // XASH_DEDICATED

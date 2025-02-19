@@ -16,8 +16,6 @@ GNU General Public License for more details.
 #include "common.h"
 #include "server.h"
 
-extern convar_t	con_gamemaps;
-
 /*
 =================
 SV_ClientPrintf
@@ -289,8 +287,8 @@ static void SV_MapBackground_f( void )
 
 	// background map is always run as singleplayer
 	Cvar_FullSet( "maxplayers", "1", FCVAR_LATCH );
-	Cvar_FullSet( "deathmatch", "0", FCVAR_LATCH );
-	Cvar_FullSet( "coop", "0", FCVAR_LATCH );
+	Cvar_FullSet( "deathmatch", "0", FCVAR_LATCH|FCVAR_SERVER );
+	Cvar_FullSet( "coop", "0", FCVAR_LATCH|FCVAR_SERVER );
 
 	COM_LoadLevel( mapname, true );
 }
@@ -489,7 +487,7 @@ static void SV_AutoSave_f( void )
 		return;
 	}
 
-	if( Cvar_VariableInteger( "sv_autosave" ) )
+	if( sv_autosave.value )
 		SV_SaveGame( "autosave" );
 }
 
@@ -575,7 +573,7 @@ static void SV_Kick_f( void )
 	sv_client_t	*cl;
 	const char *param;
 
-	if( Cmd_Argc() != 2 )
+	if( Cmd_Argc() < 2 )
 	{
 		Con_Printf( S_USAGE "kick <#id|name> [reason]\n" );
 		return;
@@ -727,7 +725,7 @@ static void SV_ServerInfo_f( void )
 	{
 		Con_Printf( "Server info settings:\n" );
 		Info_Print( svs.serverinfo );
-		Con_Printf( "Total %lu symbols\n", Q_strlen( svs.serverinfo ));
+		Con_Printf( "Total %zu symbols\n", Q_strlen( svs.serverinfo ));
 		return;
 	}
 
@@ -769,7 +767,7 @@ static void SV_LocalInfo_f( void )
 	{
 		Con_Printf( "Local info settings:\n" );
 		Info_Print( svs.localinfo );
-		Con_Printf( "Total %lu symbols\n", Q_strlen( svs.localinfo ));
+		Con_Printf( "Total %zu symbols\n", Q_strlen( svs.localinfo ));
 		return;
 	}
 
@@ -848,7 +846,7 @@ Kick everyone off, possibly in preparation for a new game
 */
 static void SV_KillServer_f( void )
 {
-	Host_ShutdownServer();
+	SV_Shutdown( "Server was killed due to shutdownserver command\n" );
 }
 
 /*
@@ -956,6 +954,22 @@ static void Rcon_Redirect_f( void )
 	Msg( "Redirection enabled for next %d lines\n", lines );
 }
 
+static void SV_ListMessages_f( void )
+{
+	int i;
+
+	Con_Printf( "num size name\n" );
+	for( i = 1; i < MAX_USER_MESSAGES; i++ )
+	{
+		if( !COM_CheckStringEmpty( svgame.msg[i].name ))
+			break;
+
+		Con_Printf( "%3d\t%3d\t%s\n", svgame.msg[i].number, svgame.msg[i].size, svgame.msg[i].name );
+	}
+
+	Con_Printf( "Total %i messages\n", i - 1 );
+}
+
 /*
 ==================
 SV_InitHostCommands
@@ -1008,6 +1022,7 @@ void SV_InitOperatorCommands( void )
 	Cmd_AddCommand( "logaddress", SV_SetLogAddress_f, "sets address and port for remote logging host" );
 	Cmd_AddCommand( "log", SV_ServerLog_f, "enables logging to file" );
 	Cmd_AddCommand( "str64stats", SV_PrintStr64Stats_f, "print engine pool string statistics" );
+	Cmd_AddCommand( "sv_list_messages", SV_ListMessages_f, "list registered user messages" );
 
 	if( host.type == HOST_NORMAL )
 	{

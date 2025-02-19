@@ -43,7 +43,7 @@ CVAR_DEFINE_AUTO( s_lerping, "0", FCVAR_ARCHIVE|FCVAR_FILTERABLE, "apply interpo
 static CVAR_DEFINE( s_ambient_level, "ambient_level", "0.3", FCVAR_ARCHIVE|FCVAR_FILTERABLE, "volume of environment noises (water and wind)" );
 static CVAR_DEFINE( s_ambient_fade, "ambient_fade", "1000", FCVAR_ARCHIVE|FCVAR_FILTERABLE, "rate of volume fading when client is moving" );
 static CVAR_DEFINE_AUTO( s_combine_sounds, "0", FCVAR_ARCHIVE|FCVAR_FILTERABLE, "combine channels with same sounds" );
-static CVAR_DEFINE_AUTO( snd_mute_losefocus, "1", FCVAR_ARCHIVE|FCVAR_FILTERABLE, "silence the audio when game window loses focus" );
+CVAR_DEFINE_AUTO( snd_mute_losefocus, "1", FCVAR_ARCHIVE|FCVAR_FILTERABLE, "silence the audio when game window loses focus" );
 CVAR_DEFINE_AUTO( s_test, "0", 0, "engine developer cvar for quick testing new features" );
 CVAR_DEFINE_AUTO( s_samplecount, "0", FCVAR_ARCHIVE|FCVAR_FILTERABLE, "sample count (0 for default value)" );
 CVAR_DEFINE_AUTO( s_warn_late_precache, "0", FCVAR_ARCHIVE|FCVAR_FILTERABLE, "warn about late precached sounds on client-side" );
@@ -67,12 +67,6 @@ float S_GetMasterVolume( void )
 	if( host.status == HOST_NOFOCUS && snd_mute_losefocus.value != 0.0f )
 	{
 		// we return zero volume to keep sounds running
-		return 0.0f;
-	}
-
-	if( s_listener.inmenu && !ui_renderworld.value && !Host_IsLocalGame( ))
-	{
-		// mute sounds in menu when it's not transparent and we're in multiplayer
 		return 0.0f;
 	}
 
@@ -388,7 +382,7 @@ channel_t *SND_PickStaticChannel( const vec3_t pos, sfx_t *sfx )
 		// no empty slots, alloc a new static sound channel
 		if( total_channels == MAX_CHANNELS )
 		{
-			Con_DPrintf( S_ERROR "S_PickStaticChannel: no free channels\n" );
+			Con_DPrintf( S_ERROR "%s: no free channels\n", __func__ );
 			return NULL;
 		}
 
@@ -530,8 +524,11 @@ static void SND_Spatialize( channel_t *ch )
 	dist = VectorNormalizeLength( source_vec );
 	dot = DotProduct( s_listener.right, source_vec );
 
-	// don't pan sounds with no attenuation
-	if( ch->dist_mult <= 0.0f ) dot = 0.0f;
+	if( !FBitSet( host.bugcomp, BUGCOMP_SPATIALIZE_SOUND_WITH_ATTN_NONE ))
+	{
+		// don't pan sounds with no attenuation
+		if( ch->dist_mult <= 0.0f ) dot = 0.0f;
+	}
 
 	// fill out channel volumes for single location
 	S_SpatializeChannel( &ch->leftvol, &ch->rightvol, ch->master_vol, gain, dot, dist * ch->dist_mult );
@@ -999,7 +996,7 @@ static void S_UpdateAmbientSounds( void )
 	// calc ambient sound levels
 	if( !cl.worldmodel ) return;
 
-	leaf = Mod_PointInLeaf( s_listener.origin, cl.worldmodel->nodes );
+	leaf = Mod_PointInLeaf( s_listener.origin, cl.worldmodel->nodes, cl.worldmodel );
 
 	if( !leaf || !s_ambient_level.value )
 	{
@@ -1098,7 +1095,7 @@ rawchan_t *S_FindRawChannel( int entnum, qboolean create )
 	if( !raw_channels[best] )
 	{
 		raw_samples = MAX_RAW_SAMPLES;
-		raw_channels[best] = Mem_Calloc( sndpool, sizeof( *ch ) + sizeof( portable_samplepair_t ) * ( raw_samples - 1 ));
+		raw_channels[best] = Mem_Calloc( sndpool, sizeof( *ch ) + sizeof( portable_samplepair_t ) * raw_samples );
 	}
 
 	ch = raw_channels[best];
@@ -1208,86 +1205,6 @@ void S_RawSamples( uint samples, uint rate, word width, word channels, const byt
 	if( entnum < 0 ) snd_vol = 256; // bg track or movie track
 
 	S_RawEntSamples( entnum, samples, rate, width, channels, data, snd_vol );
-}
-
-/*
-===================
-S_PositionedRawSamples
-===================
-*/
-void S_StreamAviSamples( void *Avi, int entnum, float fvol, float attn, float synctime )
-{
-	int	bufferSamples;
-	int	fileSamples;
-	byte	raw[MAX_RAW_SAMPLES];
-	float	duration = 0.0f;
-	int	r, fileBytes;
-	rawchan_t	*ch = NULL;
-
-	if( !dma.initialized || s_listener.paused || !CL_IsInGame( ))
-		return;
-
-	if( entnum < 0 || entnum >= GI->max_edicts )
-		return;
-
-	if( !( ch = S_FindRawChannel( entnum, true )))
-		return;
-
-	if( ch->sound_info.rate == 0 )
-	{
-		if( !AVI_GetAudioInfo( Avi, &ch->sound_info ))
-			return; // no audiotrack
-	}
-
-	ch->master_vol = bound( 0, fvol * 255, 255 );
-	ch->dist_mult = (attn / SND_CLIP_DISTANCE);
-
-	// see how many samples should be copied into the raw buffer
-	if( ch->s_rawend < soundtime )
-		ch->s_rawend = soundtime;
-
-	// position is changed, synchronization is lost etc
-	if( fabs( ch->oldtime - synctime ) > s_mixahead.value )
-		ch->sound_info.loopStart = AVI_TimeToSoundPosition( Avi, synctime * 1000 );
-	ch->oldtime = synctime; // keep actual time
-
-	while( ch->s_rawend < soundtime + ch->max_samples )
-	{
-		wavdata_t	*info = &ch->sound_info;
-
-		bufferSamples = ch->max_samples - (ch->s_rawend - soundtime);
-
-		// decide how much data needs to be read from the file
-		fileSamples = bufferSamples * ((float)info->rate / SOUND_DMA_SPEED );
-		if( fileSamples <= 1 ) return; // no more samples need
-
-		// our max buffer size
-		fileBytes = fileSamples * ( info->width * info->channels );
-
-		if( fileBytes > sizeof( raw ))
-		{
-			fileBytes = sizeof( raw );
-			fileSamples = fileBytes / ( info->width * info->channels );
-		}
-
-		// read audio stream
-		r = AVI_GetAudioChunk( Avi, raw, info->loopStart, fileBytes );
-		info->loopStart += r; // advance play position
-
-		if( r < fileBytes )
-		{
-			fileBytes = r;
-			fileSamples = r / ( info->width * info->channels );
-		}
-
-		if( r > 0 )
-		{
-			// add to raw buffer
-			ch->s_rawend = S_RawSamplesStereo( ch->rawsamples, ch->s_rawend, ch->max_samples,
-			fileSamples, info->rate, info->width, info->channels, raw );
-		}
-		else break; // no more samples for this frame
-	}
 }
 
 /*
@@ -1608,7 +1525,7 @@ void SND_UpdateSound( void )
 	s_listener.frametime = (cl.time - cl.oldtime);
 	s_listener.waterlevel = cl.local.waterlevel;
 	s_listener.active = CL_IsInGame();
-	s_listener.inmenu = CL_IsInMenu();
+	s_listener.inmenu = cls.key_dest == key_menu;
 	s_listener.paused = cl.paused;
 
 	// update general area ambient sound sources
@@ -1897,7 +1814,7 @@ S_VoiceRecordStart_f
 */
 static void S_VoiceRecordStart_f( void )
 {
-	if( cls.state != ca_active || cls.legacymode )
+	if( cls.state != ca_active )
 		return;
 	
 	Voice_RecordStart();
@@ -1924,12 +1841,6 @@ S_Init
 */
 qboolean S_Init( void )
 {
-	if( Sys_CheckParm( "-nosound" ))
-	{
-		Con_Printf( "Audio: Disabled\n" );
-		return false;
-	}
-
 	Cvar_RegisterVariable( &s_volume );
 	Cvar_RegisterVariable( &s_musicvolume );
 	Cvar_RegisterVariable( &s_mixahead );
@@ -1943,11 +1854,18 @@ qboolean S_Init( void )
 	Cvar_RegisterVariable( &s_samplecount );
 	Cvar_RegisterVariable( &s_warn_late_precache );
 
+	if( Sys_CheckParm( "-nosound" ))
+	{
+		Con_Printf( "Audio: Disabled\n" );
+		return false;
+	}
+
 	Cmd_AddCommand( "play", S_Play_f, "playing a specified sound file" );
 	Cmd_AddCommand( "play2", S_Play2_f, "playing a group of specified sound files" ); // nehahra stuff
 	Cmd_AddCommand( "playvol", S_PlayVol_f, "playing a specified sound file with specified volume" );
 	Cmd_AddCommand( "stopsound", S_StopSound_f, "stop all sounds" );
-	Cmd_AddCommand( "music", S_Music_f, "starting a background track" );
+	// HLU SDK have command with the same name
+	Cmd_AddCommandWithFlags( "music", S_Music_f, "starting a background track", CMD_OVERRIDABLE );
 	Cmd_AddCommand( "soundlist", S_SoundList_f, "display loaded sounds" );
 	Cmd_AddCommand( "s_info", S_SoundInfo_f, "print sound system information" );
 	Cmd_AddCommand( "s_fade", S_SoundFade_f, "fade all sounds then stop all" );
@@ -1956,14 +1874,15 @@ qboolean S_Init( void )
 	Cmd_AddCommand( "spk", S_SayReliable_f, "reliable play a specified sententce" );
 	Cmd_AddCommand( "speak", S_Say_f, "playing a specified sententce" );
 
+	sndpool = Mem_AllocPool( "Sound Zone" );
 	dma.backendName = "None";
-	if( !SNDDMA_Init( ) )
+	if( !SNDDMA_Init( ))
 	{
 		Con_Printf( "Audio: sound system can't be initialized\n" );
+		Mem_FreePool( &sndpool );
 		return false;
 	}
 
-	sndpool = Mem_AllocPool( "Sound Zone" );
 	soundtime = 0;
 	paintedtime = 0;
 
@@ -1990,7 +1909,8 @@ void S_Shutdown( void )
 	Cmd_RemoveCommand( "play" );
 	Cmd_RemoveCommand( "playvol" );
 	Cmd_RemoveCommand( "stopsound" );
-	Cmd_RemoveCommand( "music" );
+	if( Cmd_Exists( "music" ))
+		Cmd_RemoveCommand( "music" );
 	Cmd_RemoveCommand( "soundlist" );
 	Cmd_RemoveCommand( "s_info" );
 	Cmd_RemoveCommand( "s_fade" );

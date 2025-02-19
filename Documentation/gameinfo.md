@@ -78,11 +78,15 @@ These strings are specific to Xash3D FWGS.
 | `internal_vgui_support` | boolean    | 0                        | Only for programmers! Required to be set as 1 for PrimeXT!<br>When set to 1, the engine will not load vgui_support DLL, as VGUI support is done (or intentionally ignored) on the game side. |
 | `render_picbutton_text` | boolean    | 0                        | When set to 1, the UI will not use prerendered `btns_main.bmp` and dynamically render them instead |
 | `quicksave_aged_count`  | integer    | 2                        | Quick saves limit used in saves rotation |
+| `demomap`               | string     | Empty string             | The name of the demo chapter map (Half-Life Uplink) |
 
 ## Note on GoldSrc liblist.gam support
 
 As Xash3D accidentally supports GoldSrc games, it also supports parsing liblist.gam.\
 Xash3D will use this file if gameinfo.txt is absent, or if its modification timestamp is older than liblist.gam.
+
+> [!NOTE]
+> Starting from January 2025, Xash3D FWGS doesn't automatically generate gameinfo.txt from liblist.gam. The key conversion table still remains but if you wish to use gameinfo.txt instead of liblist.gam, you can execute `fs_make_gameinfo` in console.
 
 For game creators who plan supporting only Xash3D, using this file is not recommended.
 

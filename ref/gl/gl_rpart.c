@@ -229,10 +229,9 @@ void CL_DrawTracers( double frametime, particle_t *cl_active_tracers )
 			VectorAdd( verts[0], delta, verts[2] );
 			VectorAdd( verts[1], delta, verts[3] );
 
-			if( p->color > sizeof( gTracerColors ) / sizeof( gTracerColors[0] ))
+			if( p->color < 0 || p->color >= sizeof( gTracerColors ) / sizeof( gTracerColors[0] ))
 			{
-				gEngfuncs.Con_Printf( S_ERROR "UserTracer with color(%d) > %d\n", p->color, sizeof( gTracerColors ) / sizeof( gTracerColors[0] ));
-				p->color = 0;
+				p->color = TRACER_COLORINDEX_DEFAULT;
 			}
 
 			color = gTracerColors[p->color];
@@ -281,7 +280,6 @@ void CL_DrawParticlesExternal( const ref_viewpass_t *rvp, qboolean trans_pass, f
 {
 	ref_instance_t	oldRI = RI;
 
-	memcpy( &oldRI, &RI, sizeof( ref_instance_t ));
 	R_SetupRefParams( rvp );
 	R_SetupFrustum();
 	R_SetupGL( false );	// don't touch GL-states
@@ -290,5 +288,5 @@ void CL_DrawParticlesExternal( const ref_viewpass_t *rvp, qboolean trans_pass, f
 	gEngfuncs.CL_DrawEFX( frametime, trans_pass );
 
 	// restore internal state
-	memcpy( &RI, &oldRI, sizeof( ref_instance_t ));
+	RI = oldRI;
 }

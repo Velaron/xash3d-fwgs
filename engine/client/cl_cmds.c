@@ -146,7 +146,7 @@ void CL_PlayCDTrack_f( void )
 			if( paused ) Con_Printf( "Paused %s track %u\n", looped ? "looping" : "playing", track );
 			else Con_Printf( "Currently %s track %u\n", looped ? "looping" : "playing", track );
 		}
-		Con_Printf( "Volume is %f\n", Cvar_VariableValue( "MP3Volume" ));
+		Con_Printf( "Volume is %f\n", s_musicvolume.value );
 		return;
 	}
 	else Con_Printf( "%s: unknown command %s\n", Cmd_Argv( 0 ), command );
@@ -274,6 +274,13 @@ void CL_GenericShot_f( void )
 		string checkname;
 		int i;
 
+		// allow overriding screenshot by users request
+		if( Cmd_Argc() > 1 )
+		{
+			Q_strncpy( cls.shotname, Cmd_Argv( 1 ), sizeof( cls.shotname ));
+			break;
+		}
+
 		if( type == scrshot_snapshot )
 		{
 			fmt = "../%s_%04d.png";
@@ -349,7 +356,7 @@ void CL_SetSky_f( void )
 		return;
 	}
 
-	ref.dllFuncs.R_SetupSky( Cmd_Argv( 1 ));
+	R_SetupSky( Cmd_Argv( 1 ));
 }
 
 /*

@@ -50,7 +50,7 @@ qboolean CL_CheckFile( sizebuf_t *msg, resource_t *pResource )
 
 	if( !cl_allow_download.value )
 	{
-		Con_Reportf( "Download refused, cl_allow_download is 0\n" );
+		Con_Reportf( "Download refused, cl_allowdownload is 0\n" );
 		return true;
 	}
 
@@ -74,7 +74,7 @@ qboolean CL_CheckFile( sizebuf_t *msg, resource_t *pResource )
 
 	if( cl.http_download )
 	{
-		HTTP_AddDownload( filepath, pResource->nDownloadSize, true );
+		HTTP_AddDownload( filepath, pResource->nDownloadSize, true, pResource );
 	}
 	else
 	{
@@ -105,7 +105,7 @@ void CL_AddToResourceList( resource_t *pResource, resource_t *pList )
 void CL_RemoveFromResourceList( resource_t *pResource )
 {
 	if( pResource->pPrev == NULL || pResource->pNext == NULL )
-		Host_Error( "mislinked resource in CL_RemoveFromResourceList\n" );
+		Host_Error( "mislinked resource in %s\n", __func__ );
 
 	if( pResource->pNext == pResource || pResource->pPrev == pResource )
 		Host_Error( "attempt to free last entry in list.\n" );
@@ -120,7 +120,7 @@ void CL_MoveToOnHandList( resource_t *pResource )
 {
 	if( !pResource )
 	{
-		Con_Reportf( "Null resource passed to CL_MoveToOnHandList\n" );
+		Con_Reportf( "Null resource passed to %s\n", __func__ );
 		return;
 	}
 

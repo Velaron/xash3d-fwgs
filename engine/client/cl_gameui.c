@@ -25,6 +25,14 @@ static void 	UI_UpdateUserinfo( void );
 
 gameui_static_t	gameui;
 
+static void UI_ToggleAllowConsole_f( void )
+{
+	host.allow_console = host.allow_console_init = true;
+
+	if( gameui.globals )
+		gameui.globals->developer = true;
+}
+
 void UI_UpdateMenu( float realtime )
 {
 	if( !gameui.hInstance ) return;
@@ -216,12 +224,14 @@ UI_ShowConnectionWarning
 show message box
 =================
 */
-void UI_ShowMessageBox( const char *text )
+qboolean UI_ShowMessageBox( const char *text )
 {
 	if( gameui.dllFuncs2.pfnShowMessageBox )
 	{
 		gameui.dllFuncs2.pfnShowMessageBox( text );
+		return true;
 	}
+	return false;
 }
 
 void UI_ConnectionProgress_Disconnect( void )
@@ -397,17 +407,21 @@ void Host_Credits( void )
 	gameui.dllFuncs.pfnFinalCredits();
 }
 
-static void UI_ConvertGameInfo( GAMEINFO *out, gameinfo_t *in )
+static void UI_ConvertGameInfo( gameinfo2_t *out, const gameinfo_t *in )
 {
+	out->gi_version = GAMEINFO_VERSION;
+
 	Q_strncpy( out->gamefolder, in->gamefolder, sizeof( out->gamefolder ));
 	Q_strncpy( out->startmap, in->startmap, sizeof( out->startmap ));
 	Q_strncpy( out->trainmap, in->trainmap, sizeof( out->trainmap ));
+	Q_strncpy( out->demomap, in->demomap, sizeof( out->demomap ));
 	Q_strncpy( out->title, in->title, sizeof( out->title ));
 	Q_snprintf( out->version, sizeof( out->version ), "%g", in->version );
+	Q_strncpy( out->iconpath, in->iconpath, sizeof( out->iconpath ));
 
 	Q_strncpy( out->game_url, in->game_url, sizeof( out->game_url ));
 	Q_strncpy( out->update_url, in->update_url, sizeof( out->update_url ));
-	Q_strncpy( out->size, Q_pretifymem( in->size, 0 ), sizeof( out->size ));
+	out->size = in->size;
 	Q_strncpy( out->type, in->type, sizeof( out->type ));
 	Q_strncpy( out->date, in->date, sizeof( out->date ));
 
@@ -423,6 +437,31 @@ static void UI_ConvertGameInfo( GAMEINFO *out, gameinfo_t *in )
 		SetBits( out->flags, GFL_HD_BACKGROUND );
 	if( in->animated_title )
 		SetBits( out->flags, GFL_ANIMATED_TITLE );
+}
+
+static void UI_ToOldGameInfo( GAMEINFO *out, const gameinfo2_t *in )
+{
+	Q_strncpy( out->gamefolder, in->gamefolder, sizeof( out->gamefolder ));
+	Q_strncpy( out->startmap, in->startmap, sizeof( out->startmap ));
+	Q_strncpy( out->trainmap, in->trainmap, sizeof( out->trainmap ));
+	Q_strncpy( out->title, in->title, sizeof( out->title ));
+	Q_strncpy( out->version, in->version, sizeof( out->version ));
+	out->flags = in->flags & 0xFFFF;
+	Q_strncpy( out->game_url, in->game_url, sizeof( out->game_url ));
+	Q_strncpy( out->update_url, in->update_url, sizeof( out->update_url ));
+	Q_strncpy( out->size, Q_memprint( in->size ), sizeof( out->size ));
+	Q_strncpy( out->type, in->type, sizeof( out->type ));
+	Q_strncpy( out->date, in->date, sizeof( out->date ));
+	out->gamemode = in->gamemode;
+}
+
+static void UI_GetModsInfo( void )
+{
+	int i;
+
+	gameui.modsInfo = Mem_Calloc( gameui.mempool, sizeof( *gameui.modsInfo ) * FI->numgames );
+	for( i = 0; i < FI->numgames; i++ )
+		UI_ConvertGameInfo( &gameui.modsInfo[i], FI->games[i] );
 }
 
 /*
@@ -492,7 +531,7 @@ static HIMAGE GAME_EXPORT pfnPIC_Load( const char *szPicName, const byte *image_
 
 	if( !COM_CheckString( szPicName ))
 	{
-		Con_Reportf( S_ERROR "CL_LoadImage: refusing to load image with empty name\n" );
+		Con_Reportf( S_ERROR "%s: refusing to load image with empty name\n", __func__ );
 		return 0;
 	}
 
@@ -640,10 +679,8 @@ static void GAME_EXPORT pfnFillRGBA( int x, int y, int width, int height, int r,
 	g = bound( 0, g, 255 );
 	b = bound( 0, b, 255 );
 	a = bound( 0, a, 255 );
-	ref.dllFuncs.Color4ub( r, g, b, a );
-	ref.dllFuncs.GL_SetRenderMode( kRenderTransTexture );
-	ref.dllFuncs.R_DrawStretchPic( x, y, width, height, 0, 0, 1, 1, R_GetBuiltinTexture( REF_WHITE_TEXTURE ) );
-	ref.dllFuncs.Color4ub( 255, 255, 255, 255 );
+
+	ref.dllFuncs.FillRGBA( kRenderTransTexture, x, y, width, height, r, g, b, a );
 }
 
 /*
@@ -655,6 +692,11 @@ pfnCvar_RegisterVariable
 static cvar_t *GAME_EXPORT pfnCvar_RegisterGameUIVariable( const char *szName, const char *szValue, int flags )
 {
 	return (cvar_t *)Cvar_Get( szName, szValue, flags|FCVAR_GAMEUIDLL, Cvar_BuildAutoDescription( szName, flags|FCVAR_GAMEUIDLL ));
+}
+
+static int GAME_EXPORT Cmd_AddGameUICommand( const char *cmd_name, xcommand_t function )
+{
+	return Cmd_AddCommandEx( cmd_name, function, "gameui command", CMD_GAMEUIDLL, __func__ );
 }
 
 /*
@@ -922,11 +964,12 @@ pfnGetGameInfo
 
 =========
 */
-static int GAME_EXPORT pfnGetGameInfo( GAMEINFO *pgameinfo )
+static int GAME_EXPORT pfnGetOldGameInfo( GAMEINFO *pgameinfo )
 {
-	if( !pgameinfo ) return 0;
+	if( !pgameinfo )
+		return 0;
 
-	*pgameinfo = gameui.gameInfo;
+	UI_ToOldGameInfo( pgameinfo, &gameui.gameInfo );
 	return 1;
 }
 
@@ -938,8 +981,26 @@ pfnGetGamesList
 */
 static GAMEINFO ** GAME_EXPORT pfnGetGamesList( int *numGames )
 {
-	if( numGames ) *numGames = FI->numgames;
-	return gameui.modsInfo;
+	if( numGames )
+		*numGames = FI->numgames;
+
+	if( !gameui.oldModsInfo )
+	{
+		int i;
+
+		if( !gameui.modsInfo )
+			UI_GetModsInfo();
+
+		// first allocate array of pointers
+		gameui.oldModsInfo = Mem_Calloc( gameui.mempool, sizeof( *gameui.oldModsInfo ) * FI->numgames );
+		for( i = 0; i < FI->numgames; i++ )
+		{
+			gameui.oldModsInfo[i] = Mem_Calloc( gameui.mempool, sizeof( *gameui.oldModsInfo[i] ));
+			UI_ToOldGameInfo( gameui.oldModsInfo[i], &gameui.modsInfo[i] );
+		}
+	}
+
+	return gameui.oldModsInfo;
 }
 
 /*
@@ -1011,7 +1072,7 @@ pfnChangeInstance
 */
 static void GAME_EXPORT pfnChangeInstance( const char *newInstance, const char *szFinalMessage )
 {
-	Con_Reportf( S_ERROR "ChangeInstance menu call is deprecated!\n" );
+	Con_Reportf( S_ERROR "%s menu call is deprecated!\n", __func__ );
 }
 
 /*
@@ -1053,7 +1114,7 @@ static void GAME_EXPORT UI_ShellExecute( const char *path, const char *parms, in
 	Platform_ShellExecute( path, parms );
 
 	if( shouldExit )
-		Sys_Quit();
+		Sys_Quit( __func__ );
 }
 
 /*
@@ -1111,8 +1172,16 @@ static void GAME_EXPORT pfnSetCursor( void *hCursor )
 	Platform_SetCursorType( cursor );
 }
 
+static void GAME_EXPORT pfnGetGameDir( char *out )
+{
+	if( !out )
+		return;
+
+	Q_strncpy( out, GI->gamefolder, sizeof( GI->gamefolder ));
+}
+
 // engine callbacks
-static ui_enginefuncs_t gEngfuncs =
+static const ui_enginefuncs_t gEngfuncs =
 {
 	pfnPIC_Load,
 	GL_FreeImage,
@@ -1176,7 +1245,7 @@ static ui_enginefuncs_t gEngfuncs =
 	pfnKeyGetState,
 	pfnMemAlloc,
 	pfnMemFree,
-	pfnGetGameInfo,
+	pfnGetOldGameInfo,
 	pfnGetGamesList,
 	pfnGetFilesList,
 	SV_GetSaveComment,
@@ -1193,7 +1262,7 @@ static ui_enginefuncs_t gEngfuncs =
 	pfnSetCursor,
 	pfnIsMapValid,
 	GL_ProcessTexture,
-	COM_CompareFileTime,
+	pfnCompareFileTime,
 	VID_GetModeString,
 	(void*)COM_SaveFile,
 	pfnDelete
@@ -1223,6 +1292,38 @@ static char *pfnParseFileSafe( char *data, char *buf, const int size, unsigned i
 	return COM_ParseFileSafe( data, buf, size, flags, len, NULL );
 }
 
+static gameinfo2_t *pfnGetGameInfo( int gi_version )
+{
+	if( gi_version != gameui.gameInfo.gi_version )
+		return NULL;
+
+	return &gameui.gameInfo;
+}
+
+static gameinfo2_t *pfnGetModInfo( int gi_version, int i )
+{
+	if( i < 0 || i >= FI->numgames )
+		return NULL;
+
+	if( !gameui.modsInfo )
+		UI_GetModsInfo();
+
+	if( gi_version != gameui.modsInfo[i].gi_version )
+		return NULL;
+
+	return &gameui.modsInfo[i];
+}
+
+static int pfnIsCvarReadOnly( const char *name )
+{
+	convar_t *cv = Cvar_FindVar( name );
+
+	if( !cv )
+		return -1;
+
+	return FBitSet( cv->flags, FCVAR_READ_ONLY ) ? 1 : 0;
+}
+
 static ui_extendedfuncs_t gExtendedfuncs =
 {
 	pfnEnableTextInput,
@@ -1235,6 +1336,10 @@ static ui_extendedfuncs_t gExtendedfuncs =
 	NET_AdrToString,
 	NET_CompareAdrSort,
 	Sys_GetNativeObject,
+	&gNetApi,
+	pfnGetGameInfo,
+	pfnGetModInfo,
+	pfnIsCvarReadOnly,
 };
 
 void UI_UnloadProgs( void )
@@ -1244,6 +1349,7 @@ void UI_UnloadProgs( void )
 	// deinitialize game
 	gameui.dllFuncs.pfnShutdown();
 
+	Cmd_RemoveCommand( "ui_allowconsole" );
 	Cvar_FullSet( "host_gameuiloaded", "0", FCVAR_READ_ONLY );
 
 	Cvar_Unlink( FCVAR_GAMEUIDLL );
@@ -1294,7 +1400,7 @@ qboolean UI_LoadProgs( void )
 	if(( GetMenuAPI = (MENUAPI)COM_GetProcAddress( gameui.hInstance, "GetMenuAPI" )) == NULL )
 	{
 		COM_FreeLibrary( gameui.hInstance );
-		Con_Reportf( "UI_LoadProgs: can't init menu API\n" );
+		Con_Reportf( "%s: can't init menu API\n", __func__ );
 		gameui.hInstance = NULL;
 		return false;
 	}
@@ -1303,30 +1409,30 @@ qboolean UI_LoadProgs( void )
 	gameui.use_extended_api = false;
 
 	// make local copy of engfuncs to prevent overwrite it with user dll
-	memcpy( &gpEngfuncs, &gEngfuncs, sizeof( gpEngfuncs ));
+	gpEngfuncs = gEngfuncs;
 
 	gameui.mempool = Mem_AllocPool( "Menu Pool" );
 
 	if( !GetMenuAPI( &gameui.dllFuncs, &gpEngfuncs, gameui.globals ))
 	{
 		COM_FreeLibrary( gameui.hInstance );
-		Con_Reportf( "UI_LoadProgs: can't init menu API\n" );
+		Con_Reportf( "%s: can't init menu API\n", __func__ );
 		Mem_FreePool( &gameui.mempool );
 		gameui.hInstance = NULL;
 		return false;
 	}
 
 	// make local copy of engfuncs to prevent overwrite it with user dll
-	memcpy( &gpExtendedfuncs, &gExtendedfuncs, sizeof( gExtendedfuncs ));
+	gpExtendedfuncs = gExtendedfuncs;
 	memset( &gameui.dllFuncs2, 0, sizeof( gameui.dllFuncs2 ));
 
 	// try to initialize new extended API
 	if( ( GetExtAPI = (UIEXTENEDEDAPI)COM_GetProcAddress( gameui.hInstance, "GetExtAPI" ) ) )
 	{
-		Con_Reportf( "UI_LoadProgs: extended Menu API found\n" );
+		Con_Reportf( "%s: extended Menu API found\n", __func__ );
 		if( GetExtAPI( MENU_EXTENDED_API_VERSION, &gameui.dllFuncs2, &gpExtendedfuncs ) )
 		{
-			Con_Reportf( "UI_LoadProgs: extended Menu API initialized\n" );
+			Con_Reportf( "%s: extended Menu API initialized\n", __func__ );
 			gameui.use_extended_api = true;
 		}
 	}
@@ -1334,11 +1440,11 @@ qboolean UI_LoadProgs( void )
 	{
 		if( ( GiveTextApi = (UITEXTAPI)COM_GetProcAddress( gameui.hInstance, "GiveTextAPI" ) ) )
 		{
-			Con_Reportf( "UI_LoadProgs: extended text API found\n" );
+			Con_Reportf( "%s: extended text API found\n", __func__ );
 			Con_Reportf( S_WARN "Text API is deprecated! If you are mod developer, consider moving to Extended Menu API!\n" );
 			if( GiveTextApi( &gpExtendedfuncs ) ) // they are binary compatible, so we can just pass extended funcs API to menu
 			{
-				Con_Reportf( "UI_LoadProgs: extended text API initialized\n" );
+				Con_Reportf( "%s: extended text API initialized\n", __func__ );
 				gameui.use_extended_api = true;
 			}
 		}
@@ -1346,19 +1452,13 @@ qboolean UI_LoadProgs( void )
 		gameui.dllFuncs2.pfnAddTouchButtonToList = (ADDTOUCHBUTTONTOLIST)COM_GetProcAddress( gameui.hInstance, "AddTouchButtonToList" );
 		if( gameui.dllFuncs2.pfnAddTouchButtonToList )
 		{
-			Con_Reportf( "UI_LoadProgs: AddTouchButtonToList call found\n" );
+			Con_Reportf( "%s: AddTouchButtonToList call found\n", __func__ );
 			Con_Reportf( S_WARN "AddTouchButtonToList is deprecated! If you are mod developer, consider moving to Extended Menu API!\n" );
 		}
 	}
 
 	Cvar_FullSet( "host_gameuiloaded", "1", FCVAR_READ_ONLY );
-
-	// setup gameinfo
-	for( i = 0; i < FI->numgames; i++ )
-	{
-		gameui.modsInfo[i] = Mem_Calloc( gameui.mempool, sizeof( GAMEINFO ));
-		UI_ConvertGameInfo( gameui.modsInfo[i], FI->games[i] );
-	}
+	Cmd_AddRestrictedCommand( "ui_allowconsole", UI_ToggleAllowConsole_f, "unlocks developer console" );
 
 	UI_ConvertGameInfo( &gameui.gameInfo, FI->GameInfo ); // current gameinfo
 

@@ -6,7 +6,7 @@ def options(opt):
 	pass
 
 def configure(conf):
-	if conf.options.BUILD_TYPE != 'sanitize':
+	if conf.options.BUILD_TYPE not in ['sanitize', 'asan']:
 		conf.fatal('useless without -T sanitize')
 
 	if conf.env.COMPILER_CC != 'clang':
@@ -19,10 +19,9 @@ def add_runner_target(bld, lib, func):
 	source = bld.path.ant_glob('*.c')
 	includes = '.'
 
-	bld(
+	bld.program(
 		source   = source,
 		target   = 'run-fuzzer-' + func,
-		features = 'c cprogram',
 		includes = includes,
 		use      = 'DL werror',
 		defines  = ['FUNC="Fuzz_' + func + '"', 'LIB="' + lib + '"'],
@@ -38,3 +37,4 @@ def build(bld):
 	add_runner_target(bld, 'libxash.so', 'Image_LoadPNG')
 	add_runner_target(bld, 'libxash.so', 'Image_LoadDDS')
 	add_runner_target(bld, 'libxash.so', 'Image_LoadTGA')
+	add_runner_target(bld, 'libxash.so', 'Mod_LoadModel')

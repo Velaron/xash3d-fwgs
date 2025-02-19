@@ -35,7 +35,6 @@ static CVAR_DEFINE_AUTO( scr_drawversion, "1", FCVAR_ARCHIVE, "draw version in m
 static CVAR_DEFINE_AUTO( con_oldfont, "0", 0, "use legacy font from gfx.wad, might be missing or broken" );
 
 static int g_codepage = 0;
-static qboolean g_utf8 = false;
 
 static qboolean g_messagemode_privileged = true;
 
@@ -623,7 +622,7 @@ int Con_UtfProcessCharForce( int in )
 	// TODO: get rid of global state where possible
 	static utfstate_t state = { 0 };
 
-	int ch = Q_DecodeUTF8( &state, in );
+	uint32_t ch = Q_DecodeUTF8( &state, in );
 
 	if( g_codepage == 1251 )
 		return Q_UnicodeToCP1251( ch );
@@ -635,10 +634,13 @@ int Con_UtfProcessCharForce( int in )
 
 int GAME_EXPORT Con_UtfProcessChar( int in )
 {
-	if( !g_utf8 )
+	if( !cls.accept_utf8 ) // incoming character is not a UTF-8 sequence
 		return in;
+
+	// otherwise, decode it and convert to selected codepage
 	return Con_UtfProcessCharForce( in );
 }
+
 /*
 =================
 Con_UtfMoveLeft
@@ -652,7 +654,7 @@ int Con_UtfMoveLeft( char *str, int pos )
 	int k = 0;
 	int i;
 
-	if( !g_utf8 )
+	if( !cls.accept_utf8 ) // incoming character is not a UTF-8 sequence
 		return pos - 1;
 
 	if( pos == 1 )
@@ -679,7 +681,7 @@ int Con_UtfMoveRight( char *str, int pos, int length )
 	utfstate_t state = { 0 };
 	int i;
 
-	if( !g_utf8 )
+	if( !cls.accept_utf8 ) // incoming character is not a UTF-8 sequence
 		return pos + 1;
 
 	for( i = pos; i <= length; i++ )
@@ -845,7 +847,6 @@ void Con_Print( const char *txt )
 	static char	buf[MAX_PRINT_MSG];
 	qboolean		norefresh = false;
 	static int	lastlength = 0;
-	static qboolean	inupdate;
 	static int	bufpos = 0;
 	int		c, mask = 0;
 
@@ -874,7 +875,6 @@ void Con_Print( const char *txt )
 			Con_DeleteLastLine();
 			cr_pending = 0;
 		}
-
 		c = *txt;
 
 		switch( c )
@@ -882,10 +882,13 @@ void Con_Print( const char *txt )
 		case '\0':
 			break;
 		case '\r':
-			Con_AddLine( buf, bufpos, true );
-			lastlength = CON_LINES_LAST().length;
-			cr_pending = 1;
-			bufpos = 0;
+			if( txt[1] != '\n' )
+			{
+				Con_AddLine( buf, bufpos, true );
+				lastlength = CON_LINES_LAST().length;
+				cr_pending = 1;
+				bufpos = 0;
+			}
 			break;
 		case '\n':
 			Con_AddLine( buf, bufpos, true );
@@ -893,6 +896,7 @@ void Con_Print( const char *txt )
 			bufpos = 0;
 			break;
 		default:
+
 			buf[bufpos++] = c | mask;
 			if(( bufpos >= sizeof( buf ) - 1 ) || bufpos >= ( con.linewidth - 1 ))
 			{
@@ -938,6 +942,27 @@ void Con_Print( const char *txt )
 
 /*
 ================
+Con_NXPrintfv
+
+Draw a single debug line with specified height, color and time to live
+================
+*/
+static void Con_NXPrintfv( keydest_t key_dest, const con_nprint_t *info, const char *fmt, va_list va )
+{
+	if( info->index < 0 || info->index >= ARRAYSIZE( con.notify ))
+		return;
+
+	Q_vsnprintf( con.notify[info->index].szNotify, sizeof( con.notify[info->index].szNotify ), fmt, va );
+
+	// setup values
+	con.notify[info->index].key_dest = key_dest;
+	con.notify[info->index].expire = host.realtime + info->time_to_live;
+	MakeRGBA( con.notify[info->index].color, (byte)(info->color[0] * 255), (byte)(info->color[1] * 255), (byte)(info->color[2] * 255), 255 );
+	con.draw_notify = true;
+}
+
+/*
+================
 Con_NPrint
 
 Draw a single debug line with specified height
@@ -946,21 +971,16 @@ Draw a single debug line with specified height
 void GAME_EXPORT Con_NPrintf( int idx, const char *fmt, ... )
 {
 	va_list	args;
-
-	if( idx < 0 || idx >= MAX_DBG_NOTIFY )
-		return;
-
-	memset( con.notify[idx].szNotify, 0, MAX_STRING );
+	con_nprint_t info =
+	{
+		.index = idx,
+		.time_to_live = 4.0f,
+		.color = { 1.0f, 1.0f, 1.0f },
+	};
 
 	va_start( args, fmt );
-	Q_vsnprintf( con.notify[idx].szNotify, MAX_STRING, fmt, args );
+	Con_NXPrintfv( key_game, &info, fmt, args );
 	va_end( args );
-
-	// reset values
-	con.notify[idx].key_dest = key_game;
-	con.notify[idx].expire = host.realtime + 4.0f;
-	MakeRGBA( con.notify[idx].color, 255, 255, 255, 255 );
-	con.draw_notify = true;
 }
 
 /*
@@ -976,20 +996,9 @@ void GAME_EXPORT Con_NXPrintf( con_nprint_t *info, const char *fmt, ... )
 
 	if( !info ) return;
 
-	if( info->index < 0 || info->index >= MAX_DBG_NOTIFY )
-		return;
-
-	memset( con.notify[info->index].szNotify, 0, MAX_STRING );
-
 	va_start( args, fmt );
-	Q_vsnprintf( con.notify[info->index].szNotify, MAX_STRING, fmt, args );
+	Con_NXPrintfv( key_game, info, fmt, args );
 	va_end( args );
-
-	// setup values
-	con.notify[info->index].key_dest = key_game;
-	con.notify[info->index].expire = host.realtime + info->time_to_live;
-	MakeRGBA( con.notify[info->index].color, (byte)(info->color[0] * 255), (byte)(info->color[1] * 255), (byte)(info->color[2] * 255), 255 );
-	con.draw_notify = true;
 }
 
 /*
@@ -1002,21 +1011,16 @@ Draw a single debug line with specified height (menu version)
 void GAME_EXPORT UI_NPrintf( int idx, const char *fmt, ... )
 {
 	va_list	args;
-
-	if( idx < 0 || idx >= MAX_DBG_NOTIFY )
-		return;
-
-	memset( con.notify[idx].szNotify, 0, MAX_STRING );
+	con_nprint_t info =
+	{
+		.index = idx,
+		.time_to_live = 4.0f,
+		.color = { 1.0f, 1.0f, 1.0f },
+	};
 
 	va_start( args, fmt );
-	Q_vsnprintf( con.notify[idx].szNotify, MAX_STRING, fmt, args );
+	Con_NXPrintfv( key_menu, &info, fmt, args );
 	va_end( args );
-
-	// reset values
-	con.notify[idx].key_dest = key_menu;
-	con.notify[idx].expire = host.realtime + 4.0f;
-	MakeRGBA( con.notify[idx].color, 255, 255, 255, 255 );
-	con.draw_notify = true;
 }
 
 /*
@@ -1032,20 +1036,9 @@ void GAME_EXPORT UI_NXPrintf( con_nprint_t *info, const char *fmt, ... )
 
 	if( !info ) return;
 
-	if( info->index < 0 || info->index >= MAX_DBG_NOTIFY )
-		return;
-
-	memset( con.notify[info->index].szNotify, 0, MAX_STRING );
-
 	va_start( args, fmt );
-	Q_vsnprintf( con.notify[info->index].szNotify, MAX_STRING, fmt, args );
+	Con_NXPrintfv( key_menu, info, fmt, args );
 	va_end( args );
-
-	// setup values
-	con.notify[info->index].key_dest = key_menu;
-	con.notify[info->index].expire = host.realtime + info->time_to_live;
-	MakeRGBA( con.notify[info->index].color, (byte)(info->color[0] * 255), (byte)(info->color[1] * 255), (byte)(info->color[2] * 255), 255 );
-	con.draw_notify = true;
 }
 
 /*
@@ -1444,7 +1437,15 @@ static void Con_SaveHistory( con_history_t *self )
 	f = FS_Open( "console_history.txt", "wb", true );
 
 	for( i = historyStart; i < self->next; i++ )
-		FS_Printf( f, "%s\n", self->lines[i % CON_HISTORY].buffer );
+	{
+		const char *s = self->lines[i % CON_HISTORY].buffer;
+
+		// HACKHACK: don't save lines that have something that looks like a password
+		if( Q_stristr( s, "password" ) || Q_stristr( s, "_pw" ))
+			continue;
+
+		FS_Printf( f, "%s\n", s );
+	}
 
 	FS_Close( f );
 }
@@ -1717,7 +1718,7 @@ void Con_DrawDebug( void )
 			host.downloadcount, host.downloadfile, scr_download.value, Sys_DoubleTime() - timeStart );
 
 		Con_DrawStringLen( dlstring, &length, NULL );
-		length = Q_max( length, 500 );
+		length = Q_max( length, 300 );
 		x = refState.width - length * 1.05f;
 		y = con.curFont->charHeight * 1.05f;
 		Con_DrawString( x, y, dlstring, g_color_table[7] );
@@ -1755,7 +1756,7 @@ static void Con_DrawNotify( void )
 
 	if( host.allow_console && ( !Cvar_VariableInteger( "cl_background" ) && !Cvar_VariableInteger( "sv_background" )))
 	{
-		for( i = CON_LINES_COUNT - con.num_times; i < CON_LINES_COUNT; i++ )
+		for( i = Q_max( 0, CON_LINES_COUNT - con.num_times ); i < CON_LINES_COUNT; i++ )
 		{
 			con_lineinfo_t	*l = &CON_LINES( i );
 
@@ -1943,7 +1944,7 @@ void Con_DrawConsole( void )
 	{
 		if( !cl_allow_levelshots.value && !cls.timedemo )
 		{
-			if(( Cvar_VariableInteger( "cl_background" ) || Cvar_VariableInteger( "sv_background" )) && cls.key_dest != key_console )
+			if( cls.key_dest != key_console && ( Cvar_VariableInteger( "cl_background" ) || Cvar_VariableInteger( "sv_background" )))
 				con.vislines = con.showlines = 0;
 			else con.vislines = con.showlines = refState.height;
 		}
@@ -2091,13 +2092,10 @@ void Con_RunConsole( void )
 		}
 		else
 		{
-			Con_Printf( S_WARN "Unknown charset %s, defaulting to cp1252", con_charset.string );
-
-			Cvar_DirectSet( &con_charset, "cp1252" );
-			g_codepage = 1252;
+			g_codepage = 0;
 		}
 
-		g_utf8 = !Q_stricmp( cl_charset.string, "utf-8" );
+		cls.accept_utf8 = !Q_stricmp( cl_charset.string, "utf-8" );
 		Con_InvalidateFonts();
 		Con_LoadConchars();
 		ClearBits( con_charset.flags,   FCVAR_CHANGED );
@@ -2135,6 +2133,34 @@ void Con_CharEvent( int key )
 	}
 }
 
+static int Con_LoadSimpleConback( const char *name, int flags )
+{
+	const char *paths[] = {
+		"gfx/shell/%s.dds",
+		"gfx/shell/%s.bmp",
+		"gfx/shell/%s.tga",
+		"cached/%s640",
+		"cached/%s",
+	};
+	size_t i;
+
+	for( i = 0; i < ARRAYSIZE( paths ); i++ )
+	{
+		string path;
+
+		Q_snprintf( path, sizeof( path ), paths[i], name );
+		if( g_fsapi.FileExists( path, false ))
+		{
+			int gl_texturenum = ref.dllFuncs.GL_LoadTexture( path, NULL, 0, flags );
+
+			if( gl_texturenum )
+				return gl_texturenum;
+		}
+	}
+
+	return 0;
+}
+
 /*
 =========
 Con_VidInit
@@ -2157,38 +2183,12 @@ void Con_VidInit( void )
 
 	Con_LoadConchars();
 	Con_CheckResize();
+
 #if XASH_LOW_MEMORY
-	con.background = R_GetBuiltinTexture( REF_BLACK_TEXTURE );
+	con.background = R_GetBuiltinTexture( REF_GRAY_TEXTURE );
 #else
 	// loading console image
-	if( host.allow_console )
-	{
-		// trying to load truecolor image first
-		if( FS_FileExists( "gfx/shell/conback.bmp", false ) || FS_FileExists( "gfx/shell/conback.tga", false ))
-			con.background = ref.dllFuncs.GL_LoadTexture( "gfx/shell/conback", NULL, 0, flags );
-
-		if( !con.background )
-		{
-			if( FS_FileExists( "cached/conback640", false ))
-				con.background = ref.dllFuncs.GL_LoadTexture( "cached/conback640", NULL, 0, flags );
-			else if( FS_FileExists( "cached/conback", false ))
-				con.background = ref.dllFuncs.GL_LoadTexture( "cached/conback", NULL, 0, flags );
-		}
-	}
-	else
-	{
-		// trying to load truecolor image first
-		if( FS_FileExists( "gfx/shell/loading.bmp", false ) || FS_FileExists( "gfx/shell/loading.tga", false ))
-			con.background = ref.dllFuncs.GL_LoadTexture( "gfx/shell/loading", NULL, 0, flags );
-
-		if( !con.background )
-		{
-			if( FS_FileExists( "cached/loading640", false ))
-				con.background = ref.dllFuncs.GL_LoadTexture( "cached/loading640", NULL, 0, flags );
-			else if( FS_FileExists( "cached/loading", false ))
-				con.background = ref.dllFuncs.GL_LoadTexture( "cached/loading", NULL, 0, flags );
-		}
-	}
+	con.background = Con_LoadSimpleConback( host.allow_console ? "conback" : "loading", flags );
 
 	if( !con.background ) // last chance - quake conback image
 	{

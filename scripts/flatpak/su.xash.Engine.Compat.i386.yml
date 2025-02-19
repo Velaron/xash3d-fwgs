@@ -1,8 +1,8 @@
 app-id: su.xash.Engine.Compat.i386
 runtime: org.freedesktop.Platform
-runtime-version: &runtime-version '23.08'
+runtime-version: &runtime-version '24.08'
 x-gl-version: &gl-version '1.4'
-x-gl-versions: &gl-versions 23.08;1.4
+x-gl-versions: &gl-versions 24.08;1.4
 sdk: org.freedesktop.Sdk
 command: run.sh
 separate-locales: false
@@ -59,6 +59,7 @@ x-compat-i386-opts: &compat-i386-opts
     CC: i686-unknown-linux-gnu-gcc
     CXX: i686-unknown-linux-gnu-g++
   libdir: /app/lib32
+  no-debuginfo: true # libbacktrace relies on this
 
 modules:
   - name: bundle-setup

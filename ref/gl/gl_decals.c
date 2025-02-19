@@ -74,7 +74,7 @@ static void R_DecalUnlink( decal_t *pdecal )
 		else
 		{
 			tmp = pdecal->psurface->pdecals;
-			if( !tmp ) gEngfuncs.Host_Error( "R_DecalUnlink: bad decal list\n" );
+			if( !tmp ) gEngfuncs.Host_Error( "%s: bad decal list\n", __func__ );
 
 			while( tmp->pnext )
 			{
@@ -492,10 +492,10 @@ R_DecalCreatePoly
 creates mesh for decal on first rendering
 ====================
 */
-static glpoly_t *R_DecalCreatePoly( decalinfo_t *decalinfo, decal_t *pdecal, msurface_t *surf )
+static glpoly2_t *R_DecalCreatePoly( decalinfo_t *decalinfo, decal_t *pdecal, msurface_t *surf )
 {
 	int		lnumverts;
-	glpoly_t	*poly;
+	glpoly2_t	*poly;
 	float		*v;
 	int		i;
 
@@ -507,7 +507,7 @@ static glpoly_t *R_DecalCreatePoly( decalinfo_t *decalinfo, decal_t *pdecal, msu
 
 	// allocate glpoly
 	// REFTODO: com_studiocache pool!
-	poly = Mem_Calloc( r_temppool, sizeof( glpoly_t ) + ( lnumverts - 4 ) * VERTEXSIZE * sizeof( float ));
+	poly = Mem_Calloc( r_temppool, sizeof( glpoly2_t ) + lnumverts * VERTEXSIZE * sizeof( float ));
 	poly->next = pdecal->polys;
 	poly->flags = surf->flags;
 	pdecal->polys = poly;
@@ -670,10 +670,14 @@ static void R_DecalNodeSurfaces( model_t *model, mnode_t *node, decalinfo_t *dec
 	// iterate over all surfaces in the node
 	msurface_t	*surf;
 	int		i;
+	int firstsurface, numsurfaces;
 
-	surf = model->surfaces + node->firstsurface;
+	firstsurface = node_firstsurface( node, model );
+	numsurfaces  = node_numsurfaces( node, model );
 
-	for( i = 0; i < node->numsurfaces; i++, surf++ )
+	surf = model->surfaces + firstsurface;
+
+	for( i = 0; i < numsurfaces; i++, surf++ )
 	{
 		// never apply decals on the water or sky surfaces
 		if( surf->flags & (SURF_DRAWTURB|SURF_DRAWSKY|SURF_CONVEYOR))
@@ -695,6 +699,7 @@ static void R_DecalNode( model_t *model, mnode_t *node, decalinfo_t *decalinfo )
 {
 	mplane_t	*splitplane;
 	float	dist;
+	mnode_t *children[2];
 
 	Assert( node != NULL );
 
@@ -706,6 +711,7 @@ static void R_DecalNode( model_t *model, mnode_t *node, decalinfo_t *decalinfo )
 
 	splitplane = node->plane;
 	dist = DotProduct( decalinfo->m_Position, splitplane->normal ) - splitplane->dist;
+	node_children( children, node, model );
 
 	// This is arbitrarily set to 10 right now. In an ideal world we'd have the
 	// exact surface but we don't so, this tells me which planes are "sort of
@@ -717,19 +723,19 @@ static void R_DecalNode( model_t *model, mnode_t *node, decalinfo_t *decalinfo )
 	// have a surface normal
 	if( dist > decalinfo->m_Size )
 	{
-		R_DecalNode( model, node->children[0], decalinfo );
+		R_DecalNode( model, children[0], decalinfo );
 	}
 	else if( dist < -decalinfo->m_Size )
 	{
-		R_DecalNode( model, node->children[1], decalinfo );
+		R_DecalNode( model, children[1], decalinfo );
 	}
 	else
 	{
 		if( dist < DECAL_DISTANCE && dist > -DECAL_DISTANCE )
 			R_DecalNodeSurfaces( model, node, decalinfo );
 
-		R_DecalNode( model, node->children[0], decalinfo );
-		R_DecalNode( model, node->children[1], decalinfo );
+		R_DecalNode( model, children[0], decalinfo );
+		R_DecalNode( model, children[1], decalinfo );
 	}
 }
 
@@ -829,7 +835,7 @@ void R_DecalShoot( int textureIndex, int entityIndex, int modelIndex, vec3_t pos
 // triangles the same way.
 float *R_DecalSetupVerts( decal_t *pDecal, msurface_t *surf, int texture, int *outCount )
 {
-	glpoly_t	*p = pDecal->polys;
+	glpoly2_t	*p = pDecal->polys;
 	int	i, count;
 	float	*v, *v2;
 

@@ -96,7 +96,7 @@ static int S_TrimEnd( const wavdata_t *wav, int end )
 
 	if( width == 1 )
 	{
-		const int8_t *data = (const int8_t *)&wav->buffer[channels * width * end];
+		const int8_t *data = (const int8_t *)&wav->buffer[channels * width * ( end - 1 )];
 
 		for( i = 0; i < TRIM_SCAN_MAX && end > 0; i++ )
 		{
@@ -109,7 +109,7 @@ static int S_TrimEnd( const wavdata_t *wav, int end )
 	}
 	else if( width == 2 )
 	{
-		const int16_t *data = (const int16_t *)&wav->buffer[channels * width * end];
+		const int16_t *data = (const int16_t *)&wav->buffer[channels * width * ( end - 1 )];
 
 		for( i = 0; i < TRIM_SCAN_MAX && end > 0; i++ )
 		{
@@ -204,7 +204,7 @@ void VOX_FreeWord( channel_t *ch )
 	ch->currentWord = NULL;
 	memset( &ch->pMixer, 0, sizeof( ch->pMixer ));
 
-	if( !word->sfx && !word->fKeepCached )
+	if( !word->sfx || word->fKeepCached )
 		return;
 
 	FS_FreeSound( word->sfx->cache );
@@ -248,6 +248,12 @@ static const char *VOX_GetDirectory( char *szpath, const char *psz, int nsize )
 	const char *p;
 	int len;
 
+	// HACKHACK: some modders send strings like "/fvox/_period four"
+	// which should get parsed as "_period four" said by fvox
+	// it might be incorrect but ignore first slash here for now
+	if( psz[0] == '/' )
+		psz++;
+
 	// search / backwards
 	p = Q_strrchr( psz, '/' );
 
@@ -261,7 +267,7 @@ static const char *VOX_GetDirectory( char *szpath, const char *psz, int nsize )
 
 	if( len > nsize )
 	{
-		Con_Printf( "VOX_GetDirectory: invalid directory in: %s\n", psz );
+		Con_Printf( "%s: invalid directory in: %s\n", __func__, psz );
 		return NULL;
 	}
 
@@ -452,22 +458,20 @@ static qboolean VOX_ParseWordParams( char *psz, voxword_t *pvoxword, qboolean fF
 
 void VOX_LoadSound( channel_t *ch, const char *pszin )
 {
-	char buffer[512], szpath[32], pathbuffer[64];
-	char *rgpparseword[CVOXWORDMAX];
+	char buffer[512] = { 0 }, szpath[32] = { 0 };
+	char *rgpparseword[CVOXWORDMAX] = { 0 };
 	const char *psz;
 	int i, j;
 
 	if( !pszin )
 		return;
 
-	memset( buffer, 0, sizeof( buffer ));
-	memset( rgpparseword, 0, sizeof( rgpparseword ));
-
 	psz = VOX_LookupString( pszin );
 
 	if( !psz )
 	{
-		Con_Printf( "VOX_LoadSound: no sentence named %s\n", pszin );
+		// sometimes modders remove sentences but entities continue to use them, so it's a warning, not an error
+		Con_Printf( S_WARN "%s: no sentence named %s\n", __func__, pszin );
 		return;
 	}
 
@@ -475,26 +479,31 @@ void VOX_LoadSound( channel_t *ch, const char *pszin )
 
 	if( !psz )
 	{
-		Con_Printf( "VOX_LoadSound: failed getting directory for %s\n", pszin );
+		Con_Printf( S_ERROR "%s: failed getting directory for %s\n", __func__, pszin );
 		return;
 	}
 
 	if( Q_strlen( psz ) >= sizeof( buffer ) )
 	{
-		Con_Printf( "VOX_LoadSound: sentence is too long %s", psz );
+		Con_Printf( S_ERROR "%s: sentence is too long %s\n", __func__, psz );
 		return;
 	}
 
 	Q_strncpy( buffer, psz, sizeof( buffer ));
 	VOX_ParseString( buffer, rgpparseword );
 
-	j = 0;
-	for( i = 0; rgpparseword[i]; i++ )
+	for( i = 0, j = 0; i < CVOXWORDMAX && rgpparseword[i]; i++ )
 	{
+		char pathbuffer[MAX_SYSPATH];
+
 		if( !VOX_ParseWordParams( rgpparseword[i], &ch->words[j], i == 0 ))
 			continue;
 
-		Q_snprintf( pathbuffer, sizeof( pathbuffer ), "%s%s.wav", szpath, rgpparseword[i] );
+		if( Q_snprintf( pathbuffer, sizeof( pathbuffer ), "%s%s", szpath, rgpparseword[i] ) < 0 )
+		{
+			Con_Printf( S_ERROR "%s: path to word in sentence %s is too long\n", __func__, pszin );
+			return;
+		}
 
 		ch->words[j].sfx = S_FindName( pathbuffer, &ch->words[j].fKeepCached );
 
@@ -548,7 +557,7 @@ static void VOX_ReadSentenceFile_( byte *buf, fs_offset_t size )
 			int index = cszrawsentences;
 			int size = strlen( name ) + strlen( value ) + 2;
 
-			rgpszrawsentence[index] = Mem_Malloc( host.mempool, size );
+			rgpszrawsentence[index] = Mem_Malloc( sndpool, size );
 			memcpy( rgpszrawsentence[index], name, size );
 			rgpszrawsentence[index][size - 1] = 0;
 			cszrawsentences++;
@@ -595,8 +604,8 @@ static void Test_VOX_GetDirectory( void )
 	{
 		"", "", "vox/",
 		"bark bark", "bark bark", "vox/",
-		"barney/meow", "meow", "barney/"
-
+		"barney/meow", "meow", "barney/",
+		"/fvox/_period", "_period", "fvox/",
 	};
 	int i;
 

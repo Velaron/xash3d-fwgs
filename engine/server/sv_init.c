@@ -273,20 +273,6 @@ int GAME_EXPORT SV_GenericIndex( const char *filename )
 	return i;
 }
 
-/*
-================
-SV_ModelHandle
-
-get model by handle
-================
-*/
-model_t *GAME_EXPORT SV_ModelHandle( int modelindex )
-{
-	if( modelindex < 0 || modelindex >= MAX_MODELS )
-		return NULL;
-	return sv.models[modelindex];
-}
-
 static resourcetype_t SV_DetermineResourceType( const char *filename )
 {
 	if( !Q_strncmp( filename, DEFAULT_SOUNDPATH, sizeof( DEFAULT_SOUNDPATH ) - 1 ) && Sound_SupportedFileFormat( COM_FileExtension( filename )))
@@ -363,6 +349,7 @@ loads external resource list
 static void SV_CreateGenericResources( void )
 {
 	string	filename;
+	int i;
 
 	Q_strncpy( filename, sv.model_precache[1], sizeof( filename ));
 	COM_ReplaceExtension( filename, ".res", sizeof( filename ));
@@ -370,6 +357,14 @@ static void SV_CreateGenericResources( void )
 
 	SV_ReadResourceList( filename );
 	SV_ReadResourceList( "reslist.txt" );
+
+	for( i = 0; i < world.wadlist.count; i++ )
+	{
+		if( world.wadlist.wadusage[i] > 0 )
+		{
+			SV_GenericIndex( world.wadlist.wadnames[i] );
+		}
+	}
 }
 
 /*
@@ -704,7 +699,8 @@ void SV_DeactivateServer( void )
 
 	PM_ClearPhysEnts( svgame.pmove );
 
-	SV_EmptyStringPool();
+	SV_EmptyStringPool( true );
+	Mem_EmptyPool( svgame.stringspool );
 
 	for( i = 0; i < svs.maxclients; i++ )
 	{
@@ -795,7 +791,8 @@ static void SV_SetupClients( void )
 	if( !changed_maxclients ) return; // nothing to change
 
 	// if clients count was changed we need to run full shutdown procedure
-	if( svs.maxclients ) Host_ShutdownServer();
+	if( svs.maxclients )
+		SV_Shutdown( "Server was killed due to maxclients change\n" );
 
 	// copy the actual value from cvar
 	svs.maxclients = (int)sv_maxclients.value;
@@ -962,7 +959,7 @@ static void SV_GenerateTestPacket( void )
 	// write packet base data
 	MSG_Init( &svs.testpacket, "BandWidthTest", svs.testpacket_buf, maxsize );
 	MSG_WriteLong( &svs.testpacket, -1 );
-	MSG_WriteString( &svs.testpacket, "testpacket" );
+	MSG_WriteString( &svs.testpacket, S2C_BANDWIDTHTEST );
 	svs.testpacket_crcpos = svs.testpacket.pData + MSG_GetNumBytesWritten( &svs.testpacket );
 	MSG_WriteDword( &svs.testpacket, 0 ); // to be changed by crc
 
@@ -1017,6 +1014,8 @@ qboolean SV_SpawnServer( const char *mapname, const char *startspot, qboolean ba
 	if( !SV_InitGame( ))
 		return false;
 
+	Delta_Init(); // re-initialize delta
+
 	// unlock sv_cheats in local game
 	ClearBits( sv_cheats.flags, FCVAR_READ_ONLY );
 
@@ -1027,6 +1026,9 @@ qboolean SV_SpawnServer( const char *mapname, const char *startspot, qboolean ba
 
 	svs.timestart = Sys_DoubleTime();
 	svs.spawncount++; // any partially connected client will be restarted
+
+	for( i = 0; i < ARRAYSIZE( svs.challenge_salt ); i++ )
+		svs.challenge_salt[i] = COM_RandomLong( 0, 0x7FFFFFFE );
 
 	cycle = Cvar_VariableString( "mapchangecfgfile" );
 
@@ -1069,8 +1071,8 @@ qboolean SV_SpawnServer( const char *mapname, const char *startspot, qboolean ba
 	current_skill = bound( 0, current_skill, 3 );
 	Cvar_SetValue( "skill", (float)current_skill );
 
-	// enforce hpk_maxsize
-	HPAK_CheckSize( CUSTOM_RES_PATH );
+	// enforce hpk_max_size
+	HPAK_CheckSize( hpk_custom_file.string );
 
 	// force normal player collisions for single player
 	if( svs.maxclients == 1 )

@@ -56,7 +56,7 @@ static void SV_CreateCustomizationList( sv_client_t *cl )
 		}
 		else
 		{
-			Con_Printf( S_WARN "SV_CreateCustomization list, ignoring dup. resource for player %s\n", cl->name );
+			Con_Printf( S_WARN "%s: ignoring dup. resource for player %s\n", __func__, cl->name );
 		}
 	}
 }
@@ -228,7 +228,7 @@ void SV_TransferConsistencyInfo( void )
 				break;
 			case force_model_samebounds:
 				if( !Mod_GetStudioBounds( filepath, mins, maxs ))
-					Host_Error( "Mod_GetStudioBounds: couldn't get bounds for %s\n", filepath );
+					Host_Error( "%s: couldn't get bounds for %s\n", __func__, filepath );
 				memcpy( &pResource->rguc_reserved[0x01], mins, sizeof( mins ));
 				memcpy( &pResource->rguc_reserved[0x0D], maxs, sizeof( maxs ));
 				pResource->rguc_reserved[0] = pc->check_type;
@@ -298,7 +298,7 @@ static qboolean SV_CheckFile( sizebuf_t *msg, const char *filename )
 	{
 		COM_HexConvert( filename + 4, 32, p.rgucMD5_hash );
 
-		if( HPAK_GetDataPointer( CUSTOM_RES_PATH, &p, NULL, NULL ))
+		if( HPAK_GetDataPointer( hpk_custom_file.string, &p, NULL, NULL ))
 			return true;
 	}
 
@@ -393,7 +393,7 @@ int SV_EstimateNeededResources( sv_client_t *cl )
 		if( p->type != t_decal )
 			continue;
 
-		if( !HPAK_ResourceForHash( CUSTOM_RES_PATH, p->rgucMD5_hash, NULL ))
+		if( !HPAK_ResourceForHash( hpk_custom_file.string, p->rgucMD5_hash, NULL ))
 		{
 			if( p->nDownloadSize != 0 )
 			{

@@ -49,10 +49,6 @@ typedef struct
 	qboolean	inputEnabled;
 	qboolean	consoleVisible;
 	qboolean	attached;
-
-	// log stuff
-	qboolean	log_active;
-	char		log_path[MAX_SYSPATH];
 } WinConData;
 
 static WinConData	s_wcd;
@@ -145,7 +141,7 @@ void Wcon_ShowConsole( qboolean show )
 
 void Wcon_DisableInput( void )
 {
-	if( host.type != HOST_DEDICATED )
+	if( host.type != HOST_DEDICATED || !s_wcd.hWnd )
 		return;
 
 	s_wcd.inputEnabled = false;
@@ -469,6 +465,9 @@ print into window console
 */
 void Wcon_WinPrint( const char *pMsg )
 {
+	if( !s_wcd.hWnd )
+		return;
+
 	int nLen;
 	if( s_wcd.consoleTextLen )
 	{
@@ -497,31 +496,30 @@ Con_CreateConsole
 create win32 console
 ================
 */
-void Wcon_CreateConsole( void )
+void Wcon_CreateConsole( qboolean con_showalways )
 {
-	if( Sys_CheckParm( "-log" ))
-		s_wcd.log_active = true;
-
 	if( host.type == HOST_NORMAL )
 	{
 		Q_strncpy( s_wcd.title, XASH_ENGINE_NAME " " XASH_VERSION, sizeof( s_wcd.title ));
-		Q_strncpy( s_wcd.log_path, "engine.log", sizeof( s_wcd.log_path ));
 	}
 	else // dedicated console
 	{
 		Q_strncpy( s_wcd.title, XASH_DEDICATED_SERVER_NAME " " XASH_VERSION, sizeof( s_wcd.title ));
-		Q_strncpy( s_wcd.log_path, "dedicated.log", sizeof( s_wcd.log_path ));
-		s_wcd.log_active = true; // always make log
 	}
 
 	s_wcd.attached = ( AttachConsole( ATTACH_PARENT_PROCESS ) != 0 );
-	if( s_wcd.attached ) {
+	if( s_wcd.attached )
+	{
 		GetConsoleTitle( &s_wcd.previousTitle, sizeof( s_wcd.previousTitle ));
 		s_wcd.previousCodePage = GetConsoleCP();
 		s_wcd.previousOutputCodePage = GetConsoleOutputCP();
 	}
-	else {
-		AllocConsole();
+	else
+	{
+		if( host.type != HOST_DEDICATED && host_developer.value == DEV_NONE )
+			return; // don't initialize console in case of regular game startup, it's useless anyway
+		else
+			AllocConsole();
 	}
 
 	SetConsoleTitle( s_wcd.title );
@@ -544,7 +542,7 @@ void Wcon_CreateConsole( void )
 		SetWindowPos( s_wcd.hWnd, HWND_TOP, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOREPOSITION | SWP_SHOWWINDOW );
 
 		// show console if needed
-		if( host.con_showalways )
+		if( con_showalways )
 		{
 			// make console visible
 			ShowWindow( s_wcd.hWnd, SW_SHOWDEFAULT );
@@ -570,7 +568,7 @@ register console commands (dedicated only)
 */
 void Wcon_InitConsoleCommands( void )
 {
-	if( host.type != HOST_DEDICATED )
+	if( host.type != HOST_DEDICATED || !s_wcd.hWnd )
 		return;
 
 	Cmd_AddCommand( "clear", Wcon_Clear_f, "clear console history" );
@@ -586,12 +584,10 @@ destroy win32 console
 void Wcon_DestroyConsole( void )
 {
 	// last text message into console or log
-	Con_Reportf( "Sys_FreeLibrary: Unloading xash.dll\n" );
-
-	Sys_CloseLog();
+	Con_Reportf( "%s: Unloading xash.dll\n", __func__ );
 
 	if( !s_wcd.attached )
-	{ 
+	{
 		if( s_wcd.hWnd )
 		{
 			ShowWindow( s_wcd.hWnd, SW_HIDE );
@@ -608,10 +604,6 @@ void Wcon_DestroyConsole( void )
 	}
 
 	FreeConsole();
-
-	// place it here in case Sys_Crash working properly
-	if( host.hMutex )
-		CloseHandle( host.hMutex );
 }
 
 /*
@@ -627,7 +619,7 @@ char *Wcon_Input( void )
 	DWORD eventsCount;
 	static INPUT_RECORD events[1024];
 	
-	if( !s_wcd.inputEnabled )
+	if( !s_wcd.inputEnabled || !s_wcd.hWnd )
 		return NULL;
 
 	while( true )
@@ -670,7 +662,7 @@ set server status string in console
 */
 void Platform_SetStatus( const char *pStatus )
 {
-	if( s_wcd.attached )
+	if( s_wcd.attached || !s_wcd.hWnd )
 		return;
 
 	Q_strncpy( s_wcd.statusLine, pStatus, sizeof( s_wcd.statusLine ) - 1 );

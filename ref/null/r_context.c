@@ -34,17 +34,17 @@ static void R_SimpleStub( void )
 	;
 }
 
-static void R_SimpleStubInt( int )
+static void R_SimpleStubInt( int unused )
 {
 	;
 }
 
-static void R_SimpleStubUInt( unsigned int )
+static void R_SimpleStubUInt( unsigned int unused )
 {
 	;
 }
 
-static void R_SimpleStubBool( qboolean )
+static void R_SimpleStubBool( qboolean unused )
 {
 	;
 }
@@ -100,7 +100,7 @@ static void GL_ProcessTexture( int texnum, float gamma, int topColor, int bottom
 	;
 }
 
-static void R_SetupSky( const char *skyname )
+static void R_SetupSky( int *skytextures )
 {
 	;
 }
@@ -115,12 +115,7 @@ static void R_DrawStretchPic( float x, float y, float w, float h, float s1, floa
 	;
 }
 
-static void R_DrawTileClear( int texnum, int x, int y, int w, int h )
-{
-	;
-}
-
-static void FillRGBA( float x, float y, float w, float h, int r, int g, int b, int a )
+static void FillRGBA( int rendermode, float x, float y, float w, float h, byte r, byte g, byte b, byte a )
 {
 	;
 }
@@ -167,7 +162,7 @@ static void R_StudioLerpMovement( cl_entity_t *e, double time, vec3_t origin, ve
 	;
 }
 
-static void R_InitSkyClouds( struct mip_s *mt, struct texture_s *tx, qboolean custom_palette )
+static void R_SetSkyCloudsTextures( int solidskyTexture, int alphaskyTexture )
 {
 	;
 }
@@ -175,6 +170,11 @@ static void R_InitSkyClouds( struct mip_s *mt, struct texture_s *tx, qboolean cu
 static void GL_SubdivideSurface( model_t *mod, msurface_t *fa )
 {
 	;
+}
+
+static void CL_RunLightStyles( lightstyle_t *ls )
+{
+
 }
 
 static void R_GetSpriteParms( int *frameWidth, int *frameHeight, int *numFrames, int currentFrame, const model_t *pSprite )
@@ -192,12 +192,6 @@ static void R_GetSpriteParms( int *frameWidth, int *frameHeight, int *numFrames,
 static int R_GetSpriteTexture( const model_t *m_pSpriteModel, int frame )
 {
 	return 0;
-}
-
-static void Mod_LoadMapSprite( struct model_s *mod, const void *buffer, size_t size, qboolean *loaded )
-{
-	*loaded = false;
-	return;
 }
 
 static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte *buffer )
@@ -293,6 +287,11 @@ static int GL_LoadTextureArray( const char **names, int flags )
 static int GL_CreateTextureArray( const char *name, int width, int height, int depth, const void *buffer, texFlags_t flags )
 {
 	return 0;
+}
+
+static void R_OverrideTextureSourceSize( unsigned int textnum, unsigned int srcWidth, unsigned int srcHeight )
+{
+
 }
 
 static void DrawSingleDecal( struct decal_s *pDecal, struct msurface_s *fa )
@@ -426,47 +425,17 @@ static void CullFace( TRICULLSTYLE mode )
 	;
 }
 
-static void VGUI_SetupDrawing( int *pColor )
+static void VGUI_SetupDrawing( qboolean rect )
 {
 	;
 }
 
-static void VGUI_EnableTexture( qboolean enable )
+static void VGUI_UploadTextureBlock( int drawX, int drawY, const byte *rgba, int blockWidth, int blockHeight )
 {
 	;
 }
 
-static void VGUI_CreateTexture( int id, int width, int height )
-{
-	;
-}
-
-static void VGUI_UploadTexture( int id, const char *buffer, int width, int height )
-{
-	;
-}
-
-static void VGUI_UploadTextureBlock( int id, int drawX, int drawY, const byte *rgba, int blockWidth, int blockHeight )
-{
-	;
-}
-
-static void VGUI_DrawQuad( const vpoint_t *ul, const vpoint_t *lr )
-{
-	;
-}
-
-static void VGUI_GetTextureSizes( int *width, int *height )
-{
-	*width = *height = 0;
-}
-
-static int VGUI_GenerateTexture( void )
-{
-	return 0;
-}
-
-static ref_interface_t gReffuncs =
+static const ref_interface_t gReffuncs =
 {
 	.R_Init                = R_Init,
 	.R_Shutdown            = R_SimpleStub,
@@ -505,9 +474,7 @@ static ref_interface_t gReffuncs =
 	.R_Set2DMode      = R_SimpleStubBool,
 	.R_DrawStretchRaw = R_DrawStretchRaw,
 	.R_DrawStretchPic = R_DrawStretchPic,
-	.R_DrawTileClear  = R_DrawTileClear,
 	.FillRGBA         = FillRGBA,
-	.FillRGBABlend    = FillRGBA,
 	.WorldToScreen    = WorldToScreen,
 
 	.VID_ScreenShot  = VID_ScreenShot,
@@ -524,14 +491,13 @@ static ref_interface_t gReffuncs =
 	.R_StudioLerpMovement  = R_StudioLerpMovement,
 	.CL_InitStudioAPI      = R_SimpleStub,
 
-	.R_InitSkyClouds     = R_InitSkyClouds,
+	.R_SetSkyCloudsTextures     = R_SetSkyCloudsTextures,
 	.GL_SubdivideSurface = GL_SubdivideSurface,
-	.CL_RunLightStyles   = R_SimpleStub,
+	.CL_RunLightStyles   = CL_RunLightStyles,
 
 	.R_GetSpriteParms    = R_GetSpriteParms,
 	.R_GetSpriteTexture  = R_GetSpriteTexture,
 
-	.Mod_LoadMapSprite      = Mod_LoadMapSprite,
 	.Mod_ProcessRenderData  = Mod_ProcessRenderData,
 	.Mod_StudioLoadTextures = Mod_StudioLoadTextures,
 
@@ -556,6 +522,7 @@ static ref_interface_t gReffuncs =
 	.GL_LoadTextureArray   = GL_LoadTextureArray,
 	.GL_CreateTextureArray = GL_CreateTextureArray,
 	.GL_FreeTexture        = R_SimpleStubUInt,
+	.R_OverrideTextureSourceSize = R_OverrideTextureSourceSize,
 
 	.DrawSingleDecal      = DrawSingleDecal,
 	.R_DecalSetupVerts    = R_DecalSetupVerts,
@@ -601,19 +568,8 @@ static ref_interface_t gReffuncs =
 	.FogParams     = FogParams,
 	.CullFace      = CullFace,
 
-	.VGUI_DrawInit           = R_SimpleStub,
-	.VGUI_DrawShutdown       = R_SimpleStub,
-	.VGUI_SetupDrawingText   = VGUI_SetupDrawing,
-	.VGUI_SetupDrawingRect   = VGUI_SetupDrawing,
-	.VGUI_SetupDrawingImage  = VGUI_SetupDrawing,
-	.VGUI_BindTexture        = R_SimpleStubInt,
-	.VGUI_EnableTexture      = VGUI_EnableTexture,
-	.VGUI_CreateTexture      = VGUI_CreateTexture,
-	.VGUI_UploadTexture      = VGUI_UploadTexture,
+	.VGUI_SetupDrawing   = VGUI_SetupDrawing,
 	.VGUI_UploadTextureBlock = VGUI_UploadTextureBlock,
-	.VGUI_DrawQuad           = VGUI_DrawQuad,
-	.VGUI_GetTextureSizes    = VGUI_GetTextureSizes,
-	.VGUI_GenerateTexture    = VGUI_GenerateTexture,
 };
 
 int EXPORT GetRefAPI( int version, ref_interface_t *funcs, ref_api_t *engfuncs, ref_globals_t *globals );
@@ -623,8 +579,8 @@ int EXPORT GetRefAPI( int version, ref_interface_t *funcs, ref_api_t *engfuncs, 
 		return 0;
 
 	// fill in our callbacks
-	memcpy( funcs, &gReffuncs, sizeof( ref_interface_t ));
-	memcpy( &gEngfuncs, engfuncs, sizeof( ref_api_t ));
+	*funcs = gReffuncs;
+	gEngfuncs = *engfuncs;
 	gpGlobals = globals;
 
 	return REF_API_VERSION;

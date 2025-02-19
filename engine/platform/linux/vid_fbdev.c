@@ -117,7 +117,7 @@ qboolean VID_SetMode( void )
 	return true;
 }
 
-rserr_t   R_ChangeDisplaySettings( int width, int height, window_mode_t window_mode )
+rserr_t R_ChangeDisplaySettings( int width, int height, window_mode_t window_mode )
 {
 	int render_w, render_h;
 
@@ -126,7 +126,7 @@ rserr_t   R_ChangeDisplaySettings( int width, int height, window_mode_t window_m
 	render_w = width;
 	render_h = height;
 
-	Con_Reportf( "R_ChangeDisplaySettings: forced resolution to %dx%d)\n", width, height );
+	Con_Reportf( "%s: forced resolution to %dx%d)\n", __func__, width, height );
 
 	VID_SetDisplayTransform( &render_w, &render_h );
 	R_SaveVideoMode( width, height, render_w, render_h );
@@ -281,13 +281,8 @@ void GAME_EXPORT Platform_SetMousePos(int x, int y)
 
 }
 
-void Platform_Vibrate(float life, char flags)
+void Platform_Vibrate( float life, char flags )
 {
 
 }
-int Platform_JoyInit( int numjoy )
-{
-	return 0;
-}
-
 #endif

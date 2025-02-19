@@ -39,9 +39,6 @@ GNU General Public License for more details.
 // end game final default message
 #define DEFAULT_ENDGAME_MESSAGE	"The End"
 
-// path to the hash-pak that contain custom player decals
-#define CUSTOM_RES_PATH		"custom.hpk"
-
 // path to default playermodel in GoldSrc
 #define DEFAULT_PLAYER_PATH_HALFLIFE	"models/player.mdl"
 
@@ -55,27 +52,31 @@ GNU General Public License for more details.
 
 #define DEFAULT_EXTERNAL_PALETTE	"gfx/palette.pal"
 
-// path to folders where placed all sounds
+// path to sound files
 #define DEFAULT_SOUNDPATH		"sound/"
 
-// path store saved games
+// path to saved games
 #define DEFAULT_SAVE_DIRECTORY	"save/"
 
+// path to download games
+#define DEFAULT_DOWNLOADED_DIRECTORY "downloaded/"
+
+// path to user mod directory
+#define DEFAULT_CUSTOM_DIRECTORY "custom/"
+
 // fallback to this skybox
-#define DEFAULT_SKYBOX_PATH		"gfx/env/desert"
+#define DEFAULT_SKYBOX_NAME     "desert"
 
 // playlist for startup videos
 #define DEFAULT_VIDEOLIST_PATH	"media/StartupVids.txt"
 
 #define CVAR_GLCONFIG_DESCRIPTION	"enable or disable %s"
 
-#define DEFAULT_BSP_BUILD_ERROR	"%s can't be loaded in this build. Please rebuild engine with enabled SUPPORT_BSP2_FORMAT\n"
-
 #define DEFAULT_UPDATE_PAGE "https://github.com/FWGS/xash3d-fwgs/releases/latest"
 
 #define XASH_ENGINE_NAME "Xash3D FWGS"
 #define XASH_DEDICATED_SERVER_NAME "XashDS"
-#define XASH_VERSION        "0.20" // engine current version
+#define XASH_VERSION        "0.21" // engine current version
 #define XASH_COMPAT_VERSION "0.99" // version we are based on
 
 #endif//COM_STRINGS_H
