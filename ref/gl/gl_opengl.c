@@ -39,7 +39,7 @@ CVAR_DEFINE_AUTO( r_ripple_updatetime, "0.05", FCVAR_GLCONFIG, "how fast ripple 
 CVAR_DEFINE_AUTO( r_ripple_spawntime, "0.1", FCVAR_GLCONFIG, "how fast new ripples spawn" );
 CVAR_DEFINE_AUTO( r_large_lightmaps, "0", FCVAR_GLCONFIG|FCVAR_LATCH, "enable larger lightmap atlas textures (might break custom renderer mods)" );
 CVAR_DEFINE_AUTO( r_dlight_virtual_radius, "3", FCVAR_GLCONFIG, "increase dlight radius virtually by this amount, should help against ugly cut off dlights on highly scaled textures" );
-CVAR_DEFINE( r_fbo, "gl_fbo", "1", FCVAR_GLCONFIG, "use opengl framebuffer object rendering" );
+CVAR_DEFINE( r_fbo, "gl_fbo", "0", FCVAR_GLCONFIG, "use opengl framebuffer object rendering" );
 
 DEFINE_ENGINE_SHARED_CVAR_LIST()
 
