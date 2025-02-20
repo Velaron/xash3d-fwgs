@@ -818,7 +818,6 @@ extern convar_t	gl_msaa;
 extern convar_t	gl_stencilbits;
 extern convar_t	gl_overbright;
 extern convar_t gl_fog;
-extern convar_t r_fbo;
 
 extern convar_t	r_lighting_extended;
 extern convar_t	r_lighting_ambient;
@@ -841,6 +840,7 @@ extern convar_t r_ripple_updatetime;
 extern convar_t r_ripple_spawntime;
 extern convar_t r_large_lightmaps;
 extern convar_t r_dlight_virtual_radius;
+extern convar_t r_fbo;
 
 //
 // engine shared convars

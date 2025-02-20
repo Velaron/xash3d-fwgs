@@ -251,7 +251,7 @@ static const dllfunc_t drawrangeelementsextfuncs[] =
 { GL_CALL( glDrawRangeElementsEXT ) },
 };
 
-static dllfunc_t fbofuncs[] =
+static const dllfunc_t fbofuncs[] =
 {
 { GL_CALL( glGenFramebuffers ) },
 { GL_CALL( glBindFramebuffer ) },
@@ -264,7 +264,6 @@ static dllfunc_t fbofuncs[] =
 { GL_CALL( glBlitFramebuffer ) },
 { GL_CALL( glDeleteFramebuffers ) },
 { GL_CALL( glDeleteRenderbuffers ) },
-{ NULL, NULL }
 };
 
 // mangling in gl2shim???
@@ -1176,6 +1175,7 @@ static void GL_InitCommands( void )
 	gEngfuncs.Cvar_RegisterVariable( &r_vbo_detail );
 	gEngfuncs.Cvar_RegisterVariable( &r_large_lightmaps );
 	gEngfuncs.Cvar_RegisterVariable( &r_dlight_virtual_radius );
+	gEngfuncs.Cvar_RegisterVariable( &r_fbo );
 
 	gEngfuncs.Cvar_RegisterVariable( &gl_extensions );
 	gEngfuncs.Cvar_RegisterVariable( &gl_texture_nearest );
@@ -1193,7 +1193,6 @@ static void GL_InitCommands( void )
 	gEngfuncs.Cvar_RegisterVariable( &gl_round_down );
 	gEngfuncs.Cvar_RegisterVariable( &gl_overbright );
 	gEngfuncs.Cvar_RegisterVariable( &gl_fog );
-	gEngfuncs.Cvar_RegisterVariable( &r_fbo );
 
 	// these cvar not used by engine but some mods requires this
 	gEngfuncs.Cvar_RegisterVariable( &gl_polyoffset );
