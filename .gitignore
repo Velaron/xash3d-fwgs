@@ -222,7 +222,7 @@ publish/
 # Publish Web Output
 *.[Pp]ublish.xml
 *.azurePubxml
-# TODO: Comment the next line if you want to checkin your web deploy settings 
+# TODO: Comment the next line if you want to checkin your web deploy settings
 # but database connection strings (with potential passwords) will be unencrypted
 *.pubxml
 *.publishproj
@@ -349,3 +349,7 @@ enc_temp_folder/
 # JetBrains
 .idea/
 cmake-build-*
+
+# some Android-specific build stuff
+3rdparty/SDL
+3rdparty/hlsdk-portable
