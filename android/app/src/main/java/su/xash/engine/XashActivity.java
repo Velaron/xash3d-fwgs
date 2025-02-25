@@ -12,6 +12,8 @@ import android.view.WindowManager;
 
 import org.libsdl.app.SDLActivity;
 
+import su.xash.engine.util.AndroidBug5497Workaround;
+
 public class XashActivity extends SDLActivity {
 	private boolean mUseVolumeKeys;
 	private String mPackageName;
@@ -130,6 +132,9 @@ public class XashActivity extends SDLActivity {
 
 		String pakfile = getIntent().getStringExtra("pakfile");
 		if (pakfile != null) nativeSetenv("XASH3D_EXTRAS_PAK2", pakfile);
+
+		String basedir = getIntent().getStringExtra("basedir");
+		if (basedir != null) nativeSetenv("XASH3D_BASEDIR", basedir);
 
 		mUseVolumeKeys = getIntent().getBooleanExtra("usevolume", false);
 		mPackageName = getIntent().getStringExtra("package");
